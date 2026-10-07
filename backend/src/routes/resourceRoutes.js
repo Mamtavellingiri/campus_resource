@@ -1,25 +1,12 @@
 const express = require('express');
-const {
-  getAllResources,
-  getResourceById,
-  createResource,
-  updateResource,
-  deleteResource,
-  updateResourceStatus,
-  getBuildingsAndTypes
-} = require('../controllers/resourceController');
-const { authenticate, authorize } = require('../middleware/authMiddleware');
-
 const router = express.Router();
+const resourceController = require('../controllers/resourceController');
+const authMiddleware = require('../middleware/authMiddleware');
 
-router.get('/', getAllResources);
-router.get('/meta/categories', getBuildingsAndTypes);
-router.get('/:id', getResourceById);
-
-// Admin-only endpoints
-router.post('/', authenticate, authorize(['ADMIN']), createResource);
-router.put('/:id', authenticate, authorize(['ADMIN']), updateResource);
-router.delete('/:id', authenticate, authorize(['ADMIN']), deleteResource);
-router.patch('/:id/status', authenticate, authorize(['ADMIN', 'FACULTY']), updateResourceStatus);
+router.get('/', resourceController.getAll);
+router.get('/:id', resourceController.getOne);
+router.post('/', authMiddleware, resourceController.create);
+router.put('/:id', authMiddleware, resourceController.update);
+router.delete('/:id', authMiddleware, resourceController.delete);
 
 module.exports = router;

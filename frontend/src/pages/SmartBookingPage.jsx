@@ -36,6 +36,7 @@ export default function SmartBookingPage() {
   const [buildings, setBuildings] = useState([]);
   const [resources, setResources] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
+  const [recommendationAttempted, setRecommendationAttempted] = useState(false);
   const [conflictInfo, setConflictInfo] = useState(null);
   const [loading, setLoading] = useState(false);
   const [bookingSuccess, setBookingSuccess] = useState(null);
@@ -51,6 +52,17 @@ export default function SmartBookingPage() {
     'Wheelchair Access',
     '4K Video Bar'
   ];
+
+  const today = new Date().toISOString().split('T')[0];
+  const validAttendeeCount = Number.isInteger(Number(attendeeCount)) && Number(attendeeCount) >= 1 && Number(attendeeCount) <= 10000;
+  const hasValidTimeRange = Boolean(startTime && endTime && startTime < endTime);
+  const isRecommendationFormComplete = Boolean(
+    purpose.trim().length >= 3 &&
+    date &&
+    date >= today &&
+    hasValidTimeRange &&
+    validAttendeeCount
+  );
 
   useEffect(() => {
     // Fetch buildings & categories
@@ -82,12 +94,20 @@ export default function SmartBookingPage() {
 
   // Trigger AI Recommendation Engine
   const handleGetRecommendations = async () => {
+    if (!isRecommendationFormComplete) {
+      setRecommendations([]);
+      setErrorMsg('Complete the required purpose, date, time range, and attendee count before generating AI recommendations.');
+      return;
+    }
+
     setLoading(true);
+    setRecommendationAttempted(true);
     setConflictInfo(null);
     setErrorMsg(null);
     try {
       const res = await api.post('/bookings/recommend', {
         resourceType: resourceCategory || undefined,
+        purpose: purpose.trim(),
         date,
         startTime,
         endTime,
@@ -245,6 +265,7 @@ export default function SmartBookingPage() {
                 <label className="block text-xs font-semibold text-slate-300 mb-1">Date</label>
                 <input
                   type="date"
+                  min={today}
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
@@ -256,7 +277,7 @@ export default function SmartBookingPage() {
                 <input
                   type="number"
                   min="1"
-                  max="500"
+                  max="10000"
                   value={attendeeCount}
                   onChange={(e) => setAttendeeCount(e.target.value)}
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
@@ -323,12 +344,17 @@ export default function SmartBookingPage() {
 
             <button
               onClick={handleGetRecommendations}
-              disabled={loading}
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-bold text-xs hover:from-emerald-400 hover:to-teal-400 transition-all shadow-lg flex items-center justify-center gap-2 mt-4"
+              disabled={loading || !isRecommendationFormComplete}
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-bold text-xs hover:from-emerald-400 hover:to-teal-400 transition-all shadow-lg flex items-center justify-center gap-2 mt-4 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Sparkles className="w-4 h-4" />
               {loading ? 'Calculating AI Match...' : 'Run AI Smart Recommendation'}
             </button>
+            {!isRecommendationFormComplete && (
+              <p className="text-[11px] text-amber-300/90">
+                Enter a purpose, a future or current date, a valid time range, and 1–10,000 attendees to enable AI recommendations.
+              </p>
+            )}
           </div>
 
           {/* Right Column: AI Recommendations List */}
@@ -344,7 +370,9 @@ export default function SmartBookingPage() {
             {recommendations.length === 0 ? (
               <div className="glass-panel p-8 rounded-3xl border border-slate-800 text-center text-xs text-slate-400">
                 <Sparkles className="w-8 h-8 text-emerald-400 mx-auto mb-2 opacity-50" />
-                Click "Run AI Smart Recommendation" to score and view top candidate resources matching your date and capacity.
+                {recommendationAttempted
+                  ? `No resources match ${attendeeCount || 0} attendees with the selected date, time, category, and facilities. Try lowering the attendee count or changing your selections.`
+                  : 'Click "Run AI Smart Recommendation" to score and view candidate resources matching your date and capacity.'}
               </div>
             ) : (
               <div className="space-y-4">

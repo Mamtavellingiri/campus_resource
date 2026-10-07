@@ -1,17 +1,10 @@
 const express = require('express');
-const {
-  getMaintenanceTickets,
-  createMaintenanceTicket,
-  updateMaintenanceTicket
-} = require('../controllers/maintenanceController');
-const { authenticate, authorize } = require('../middleware/authMiddleware');
-
 const router = express.Router();
+const maintenanceController = require('../controllers/maintenanceController');
+const authMiddleware = require('../middleware/authMiddleware');
 
-router.use(authenticate);
-
-router.get('/', getMaintenanceTickets);
-router.post('/', authorize(['ADMIN']), createMaintenanceTicket);
-router.patch('/:id', authorize(['ADMIN']), updateMaintenanceTicket);
+router.post('/lock', authMiddleware, maintenanceController.lockResource);
+router.post('/unlock', authMiddleware, maintenanceController.unlockResource);
+router.get('/', authMiddleware, maintenanceController.getAll);
 
 module.exports = router;

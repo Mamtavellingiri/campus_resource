@@ -4,17 +4,11 @@
 
 ---
 
-## 🚀 Demo Credentials (Pre-Seeded & Ready for Instant Evaluation)
+## 🔐 Individual BIT Accounts
 
-The application comes pre-populated with realistic campus seed data (20+ users, 15+ resources, 25+ bookings, notifications, feedback, and audit logs).
+Every person signs in manually with a unique email address and password. Registration requires a `@bitsathy.ac.in` email, a department, and a password with at least eight characters including a letter and a number. Public registration can create Student and Faculty accounts only; administrator accounts must be provisioned by an administrator.
 
-| Role | Demo Email | Password | Access Capabilities |
-| :--- | :--- | :--- | :--- |
-| **👑 ADMIN** | `admin@campus.com` | `Admin@123` | Full system control, resource CRUD, approvals, maintenance locking, energy analytics, audit logs |
-| **🎓 FACULTY** | `faculty@campus.com` | `Faculty@123` | Class/event bookings, recurring bookings, department student approval workflow |
-| **🎒 STUDENT** | `student@campus.com` | `Student@123` | Smart resource search, QR digital pass, live check-in/out, booking history, feedback |
-
-> 💡 **Quick Login**: The Login page features **One-Click Demo Login Buttons** to log in instantly without typing!
+The repeatable database seed records verified Bannari Amman Institute of Technology details, including the official department directory, address and contacts, Learning Centre Digital Library, auditoria, Electronics and Instrumentation Computer Centre, and indoor badminton courts. Source URLs and the latest verification timestamp are stored in `SystemSetting` records.
 
 ---
 
@@ -96,6 +90,8 @@ npm start
 ```
 *Backend API will run at:* `http://localhost:5000/api`
 
+`backend/.env` controls the API port and permitted frontend origin. Copy `backend/.env.example` if you need a fresh configuration.
+
 ### 2. Start the Frontend Application
 ```bash
 cd C:\Users\mamta\OneDrive\Desktop\campus_resource\frontend
@@ -107,6 +103,8 @@ npm install
 npm run dev
 ```
 *Frontend application will run at:* `http://localhost:3000`
+
+The frontend calls `/api` and Vite proxies it to `http://localhost:5000` in development. For another API host, copy `frontend/.env.example` to `frontend/.env` and update `VITE_API_BASE_URL` and `VITE_BACKEND_URL`.
 
 ---
 
@@ -129,8 +127,8 @@ npm run dev
 
 ## ✅ Evaluation & Testing Flow
 
-1. **Sign In**: Navigate to `http://localhost:3000/login` and click **ADMIN**, **FACULTY**, or **STUDENT** to log in.
-2. **AI Smart Booking**: Go to **AI Smart Booking**, enter 40 attendees, pick required facilities, and click **Run AI Smart Recommendation**.
+1. **Sign In**: Navigate to `http://localhost:3000/login` and enter your individual BIT account credentials.
+2. **AI Smart Booking**: Go to **AI Smart Booking**, complete the purpose, date, time range, and attendee count, then click **Run AI Smart Recommendation**.
 3. **Double Booking Guard**: Try booking an occupied room for the exact same date & time slot to see the **Conflict Alert Modal**.
 4. **QR Check-In**: Go to **My Bookings & QR**, click **View QR & Check-In**, then click **Simulate QR Check-In Scanner**. Notice the status becomes `CHECKED_IN`.
 5. **Eco Analytics**: Log in as **Admin** and navigate to **Green Energy Analytics** to view the Recharts graphs.

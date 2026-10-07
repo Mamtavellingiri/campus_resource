@@ -1,84 +1,73 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useState, useContext, useEffect } from 'react';
 import api from '../services/api';
 
 const AuthContext = createContext();
 
+export const useAuth = () => useContext(AuthContext);
+
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(() => {
-    const saved = localStorage.getItem('user');
-    return saved ? JSON.parse(saved) : null;
-  });
-  const [token, setToken] = useState(() => localStorage.getItem('token') || null);
+  const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    const initAuth = async () => {
-      if (token) {
-        try {
-          const res = await api.get('/auth/me');
-          if (res.data.success) {
-            setUser(res.data.user);
-            localStorage.setItem('user', JSON.stringify(res.data.user));
-          }
-        } catch (err) {
-          console.error('Failed to verify token', err);
-          logout();
-        }
-      }
-      setLoading(false);
-    };
+    const token = localStorage.getItem('token');
+    const savedUser = localStorage.getItem('user');
 
-    initAuth();
-  }, [token]);
+    if (token && savedUser) {
+      setUser(JSON.parse(savedUser));
+      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    }
+    setLoading(false);
+  }, []);
 
   const login = async (email, password) => {
-    const res = await api.post('/auth/login', { email, password });
-    if (res.data.success) {
-      setToken(res.data.token);
-      setUser(res.data.user);
-      localStorage.setItem('token', res.data.token);
-      localStorage.setItem('user', JSON.stringify(res.data.user));
+    try {
+      setError(null);
+      const response = await api.post('/auth/login', { email, password });
+
+      if (response.data.success) {
+        const { token, user } = response.data;
+        localStorage.setItem('token', token);
+        localStorage.setItem('user', JSON.stringify(user));
+        api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+        setUser(user);
+        return { success: true, user };
+      }
+      return { success: false, message: 'Login failed' };
+    } catch (error) {
+      setError(error.response?.data?.message || 'Login failed');
+      return { success: false, message: error.response?.data?.message || 'Login failed' };
     }
-    return res.data;
   };
 
   const register = async (userData) => {
-    const res = await api.post('/auth/register', userData);
-    if (res.data.success) {
-      setToken(res.data.token);
-      setUser(res.data.user);
-      localStorage.setItem('token', res.data.token);
-      localStorage.setItem('user', JSON.stringify(res.data.user));
+    try {
+      setError(null);
+      const response = await api.post('/auth/register', userData);
+      return { success: true, data: response.data };
+    } catch (error) {
+      setError(error.response?.data?.message || 'Registration failed');
+      return { success: false, message: error.response?.data?.message || 'Registration failed' };
     }
-    return res.data;
   };
 
   const logout = () => {
-    setUser(null);
-    setToken(null);
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    delete api.defaults.headers.common['Authorization'];
+    setUser(null);
   };
 
-  const isStudent = () => user?.role === 'STUDENT';
-  const isFaculty = () => user?.role === 'FACULTY';
-  const isAdmin = () => user?.role === 'ADMIN';
+  const value = {
+    user,
+    login,
+    register,
+    logout,
+    loading,
+    error,
+    isAuthenticated: !!user
+  };
 
-  return (
-    <AuthContext.Provider value={{
-      user,
-      token,
-      loading,
-      login,
-      register,
-      logout,
-      isStudent,
-      isFaculty,
-      isAdmin
-    }}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
-
-export const useAuth = () => useContext(AuthContext);

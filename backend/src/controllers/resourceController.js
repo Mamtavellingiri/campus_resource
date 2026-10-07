@@ -1,320 +1,191 @@
 const prisma = require('../config/prisma');
 
-const getAllResources = async (req, res) => {
+// @desc    Get all resources
+// @route   GET /api/resources
+// @access  Public
+exports.getAll = async (req, res) => {
   try {
-    const {
-      search,
-      buildingId,
-      typeCategory,
-      minCapacity,
-      status,
-      minEcoScore
-    } = req.query;
+    const { type, building, status, search } = req.query;
 
     const where = {};
-
+    if (type) where.type = type;
+    if (building) where.building = building;
+    if (status) where.status = status;
     if (search) {
       where.OR = [
         { name: { contains: search } },
-        { description: { contains: search } },
         { roomNumber: { contains: search } }
       ];
     }
 
-    if (buildingId) {
-      where.buildingId = buildingId;
-    }
-
-    if (typeCategory) {
-      where.type = { category: typeCategory };
-    }
-
-    if (minCapacity) {
-      where.capacity = { gte: parseInt(minCapacity, 10) };
-    }
-
-    if (status) {
-      where.status = status;
-    }
-
-    if (minEcoScore) {
-      where.ecoScore = { gte: parseInt(minEcoScore, 10) };
-    }
-
     const resources = await prisma.resource.findMany({
       where,
-      include: {
-        type: true,
-        building: true,
-        maintenances: {
-          where: { status: { in: ['REPORTED', 'IN_PROGRESS'] } }
-        }
-      },
       orderBy: { name: 'asc' }
     });
 
-    // Parse JSON string fields for client consumption
-    const formatted = resources.map(r => ({
-      ...r,
-      facilities: JSON.parse(r.facilities || '[]'),
-      availableEquipment: JSON.parse(r.availableEquipment || '[]'),
-      images: JSON.parse(r.images || '[]')
-    }));
+    res.json({
+      success: true,
+      count: resources.length,
+      resources
+    });
 
-    return res.json({ success: true, count: formatted.length, resources: formatted });
   } catch (error) {
-    return res.status(500).json({ success: false, message: 'Failed to fetch resources.', error: error.message });
+    console.error('Get resources error:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ Server error'
+    });
   }
 };
 
-const getResourceById = async (req, res) => {
+// @desc    Get single resource
+// @route   GET /api/resources/:id
+// @access  Public
+exports.getOne = async (req, res) => {
   try {
-    const { id } = req.params;
     const resource = await prisma.resource.findUnique({
-      where: { id },
-      include: {
-        type: true,
-        building: true,
-        bookings: {
-          where: { status: { in: ['APPROVED', 'CHECKED_IN'] } },
-          take: 10,
-          orderBy: { date: 'asc' }
-        },
-        maintenances: true,
-        feedbacks: {
-          include: { user: { select: { name: true, role: true } } },
-          take: 10,
-          orderBy: { createdAt: 'desc' }
-        }
-      }
+      where: { id: parseInt(req.params.id) }
     });
 
     if (!resource) {
-      return res.status(404).json({ success: false, message: 'Resource not found.' });
+      return res.status(404).json({
+        success: false,
+        message: '❌ Resource not found'
+      });
     }
 
-    const formatted = {
-      ...resource,
-      facilities: JSON.parse(resource.facilities || '[]'),
-      availableEquipment: JSON.parse(resource.availableEquipment || '[]'),
-      images: JSON.parse(resource.images || '[]')
-    };
+    res.json({
+      success: true,
+      resource
+    });
 
-    return res.json({ success: true, resource: formatted });
   } catch (error) {
-    return res.status(500).json({ success: false, message: 'Failed to fetch resource details.', error: error.message });
+    console.error('Get resource error:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ Server error'
+    });
   }
 };
 
-const createResource = async (req, res) => {
+// @desc    Create resource
+// @route   POST /api/resources
+// @access  Private (Admin only)
+exports.create = async (req, res) => {
   try {
-    const {
-      name,
-      typeId,
-      buildingId,
-      floor = 1,
-      roomNumber,
-      capacity,
-      description,
-      facilities = [],
-      availableEquipment = [],
-      images = [],
-      operatingHoursStart = '08:00',
-      operatingHoursEnd = '20:00',
-      energyEfficiencyRating = 85,
-      ecoScore = 85,
-      basePowerConsumptionKw = 2.0,
-      hourlyCost = 0.0
-    } = req.body;
+    const { name, roomNumber, type, capacity, building, floor, facilities, status, ecoScore, basePowerConsumptionKw } = req.body;
 
-    if (!name || !typeId || !buildingId || !roomNumber || !capacity) {
-      return res.status(400).json({ success: false, message: 'Missing required resource fields.' });
+    if (!name || !roomNumber || !type || !capacity || !building) {
+      return res.status(400).json({
+        success: false,
+        message: '❌ Name, room number, type, capacity, and building are required'
+      });
     }
 
-    const newResource = await prisma.resource.create({
+    const resource = await prisma.resource.create({
       data: {
         name,
-        typeId,
-        buildingId,
-        floor: parseInt(floor, 10),
         roomNumber,
-        capacity: parseInt(capacity, 10),
-        description,
-        facilities: JSON.stringify(facilities),
-        availableEquipment: JSON.stringify(availableEquipment),
-        images: JSON.stringify(images),
-        operatingHoursStart,
-        operatingHoursEnd,
-        energyEfficiencyRating: parseInt(energyEfficiencyRating, 10),
-        ecoScore: parseInt(ecoScore, 10),
-        basePowerConsumptionKw: parseFloat(basePowerConsumptionKw),
-        hourlyCost: parseFloat(hourlyCost),
-        status: 'AVAILABLE'
-      },
-      include: { type: true, building: true }
-    });
-
-    await prisma.auditLog.create({
-      data: {
-        userId: req.user.id,
-        action: 'CREATE_RESOURCE',
-        entity: 'RESOURCE',
-        entityId: newResource.id,
-        details: `Admin ${req.user.name} created resource ${newResource.name}`
+        type,
+        capacity: parseInt(capacity),
+        building,
+        floor: floor ? parseInt(floor) : null,
+        facilities: facilities || '',
+        status: status || 'AVAILABLE',
+        ecoScore: ecoScore ? parseInt(ecoScore) : null,
+        basePowerConsumptionKw: basePowerConsumptionKw ? parseFloat(basePowerConsumptionKw) : null
       }
     });
 
-    return res.status(201).json({
+    res.status(201).json({
       success: true,
-      message: 'Resource created successfully!',
-      resource: {
-        ...newResource,
-        facilities: JSON.parse(newResource.facilities),
-        availableEquipment: JSON.parse(newResource.availableEquipment),
-        images: JSON.parse(newResource.images)
-      }
+      message: '✅ Resource created successfully!',
+      resource
     });
+
   } catch (error) {
-    return res.status(500).json({ success: false, message: 'Failed to create resource.', error: error.message });
+    console.error('Create resource error:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ Server error'
+    });
   }
 };
 
-const updateResource = async (req, res) => {
+// @desc    Update resource
+// @route   PUT /api/resources/:id
+// @access  Private (Admin only)
+exports.update = async (req, res) => {
   try {
-    const { id } = req.params;
-    const {
-      name,
-      typeId,
-      buildingId,
-      floor,
-      roomNumber,
-      capacity,
-      description,
-      facilities,
-      availableEquipment,
-      images,
-      operatingHoursStart,
-      operatingHoursEnd,
-      status,
-      energyEfficiencyRating,
-      ecoScore,
-      basePowerConsumptionKw
-    } = req.body;
+    const id = parseInt(req.params.id);
+    const { name, roomNumber, type, capacity, building, floor, facilities, status, ecoScore, basePowerConsumptionKw } = req.body;
 
-    const data = {};
-    if (name !== undefined) data.name = name;
-    if (typeId !== undefined) data.typeId = typeId;
-    if (buildingId !== undefined) data.buildingId = buildingId;
-    if (floor !== undefined) data.floor = parseInt(floor, 10);
-    if (roomNumber !== undefined) data.roomNumber = roomNumber;
-    if (capacity !== undefined) data.capacity = parseInt(capacity, 10);
-    if (description !== undefined) data.description = description;
-    if (facilities !== undefined) data.facilities = JSON.stringify(facilities);
-    if (availableEquipment !== undefined) data.availableEquipment = JSON.stringify(availableEquipment);
-    if (images !== undefined) data.images = JSON.stringify(images);
-    if (operatingHoursStart !== undefined) data.operatingHoursStart = operatingHoursStart;
-    if (operatingHoursEnd !== undefined) data.operatingHoursEnd = operatingHoursEnd;
-    if (status !== undefined) data.status = status;
-    if (energyEfficiencyRating !== undefined) data.energyEfficiencyRating = parseInt(energyEfficiencyRating, 10);
-    if (ecoScore !== undefined) data.ecoScore = parseInt(ecoScore, 10);
-    if (basePowerConsumptionKw !== undefined) data.basePowerConsumptionKw = parseFloat(basePowerConsumptionKw);
+    const existing = await prisma.resource.findUnique({ where: { id } });
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        message: '❌ Resource not found'
+      });
+    }
 
-    const updated = await prisma.resource.update({
+    const resource = await prisma.resource.update({
       where: { id },
-      data,
-      include: { type: true, building: true }
-    });
-
-    await prisma.auditLog.create({
       data: {
-        userId: req.user.id,
-        action: 'UPDATE_RESOURCE',
-        entity: 'RESOURCE',
-        entityId: updated.id,
-        details: `Updated resource ${updated.name}`
+        name: name || existing.name,
+        roomNumber: roomNumber || existing.roomNumber,
+        type: type || existing.type,
+        capacity: capacity ? parseInt(capacity) : existing.capacity,
+        building: building || existing.building,
+        floor: floor !== undefined ? parseInt(floor) : existing.floor,
+        facilities: facilities !== undefined ? facilities : existing.facilities,
+        status: status || existing.status,
+        ecoScore: ecoScore !== undefined ? parseInt(ecoScore) : existing.ecoScore,
+        basePowerConsumptionKw: basePowerConsumptionKw !== undefined ? parseFloat(basePowerConsumptionKw) : existing.basePowerConsumptionKw
       }
     });
 
-    return res.json({
+    res.json({
       success: true,
-      message: 'Resource updated successfully!',
-      resource: {
-        ...updated,
-        facilities: JSON.parse(updated.facilities || '[]'),
-        availableEquipment: JSON.parse(updated.availableEquipment || '[]'),
-        images: JSON.parse(updated.images || '[]')
-      }
+      message: '✅ Resource updated successfully!',
+      resource
     });
+
   } catch (error) {
-    return res.status(500).json({ success: false, message: 'Failed to update resource.', error: error.message });
+    console.error('Update resource error:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ Server error'
+    });
   }
 };
 
-const deleteResource = async (req, res) => {
+// @desc    Delete resource
+// @route   DELETE /api/resources/:id
+// @access  Private (Admin only)
+exports.delete = async (req, res) => {
   try {
-    const { id } = req.params;
-    const resource = await prisma.resource.findUnique({ where: { id } });
-    if (!resource) {
-      return res.status(404).json({ success: false, message: 'Resource not found.' });
+    const id = parseInt(req.params.id);
+
+    const existing = await prisma.resource.findUnique({ where: { id } });
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        message: '❌ Resource not found'
+      });
     }
 
     await prisma.resource.delete({ where: { id } });
 
-    await prisma.auditLog.create({
-      data: {
-        userId: req.user.id,
-        action: 'DELETE_RESOURCE',
-        entity: 'RESOURCE',
-        entityId: id,
-        details: `Deleted resource ${resource.name}`
-      }
+    res.json({
+      success: true,
+      message: '✅ Resource deleted successfully!'
     });
 
-    return res.json({ success: true, message: 'Resource deleted successfully.' });
   } catch (error) {
-    return res.status(500).json({ success: false, message: 'Failed to delete resource.', error: error.message });
-  }
-};
-
-const updateResourceStatus = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status, maintenanceStatus } = req.body;
-
-    if (!['AVAILABLE', 'BOOKED', 'MAINTENANCE', 'OUT_OF_SERVICE'].includes(status)) {
-      return res.status(400).json({ success: false, message: 'Invalid resource status value.' });
-    }
-
-    const updated = await prisma.resource.update({
-      where: { id },
-      data: {
-        status,
-        maintenanceStatus: maintenanceStatus || (status === 'MAINTENANCE' ? 'UNDER_REPAIR' : 'NONE')
-      }
+    console.error('Delete resource error:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ Server error'
     });
-
-    return res.json({ success: true, message: `Resource status changed to ${status}`, resource: updated });
-  } catch (error) {
-    return res.status(500).json({ success: false, message: 'Failed to update status.', error: error.message });
   }
-};
-
-const getBuildingsAndTypes = async (req, res) => {
-  try {
-    const buildings = await prisma.building.findMany({ orderBy: { name: 'asc' } });
-    const types = await prisma.resourceType.findMany({ orderBy: { name: 'asc' } });
-    return res.json({ success: true, buildings, types });
-  } catch (error) {
-    return res.status(500).json({ success: false, message: 'Failed to fetch categories/buildings.', error: error.message });
-  }
-};
-
-module.exports = {
-  getAllResources,
-  getResourceById,
-  createResource,
-  updateResource,
-  deleteResource,
-  updateResourceStatus,
-  getBuildingsAndTypes
 };

@@ -1,10 +1,9 @@
 const express = require('express');
-const { getSystemOverview, getEnergyAnalytics, getUtilizationAnalytics } = require('../controllers/analyticsController');
-
 const router = express.Router();
+const analyticsController = require('../controllers/analyticsController');
+const authMiddleware = require('../middleware/authMiddleware');
 
-router.get('/overview', getSystemOverview);
-router.get('/energy', getEnergyAnalytics);
-router.get('/utilization', getUtilizationAnalytics);
+router.get('/energy', authMiddleware, analyticsController.getEnergyAnalytics);
+router.get('/eco-scores', authMiddleware, analyticsController.getEcoScores);
 
 module.exports = router;

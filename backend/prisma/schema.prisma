@@ -8,192 +8,92 @@ datasource db {
 }
 
 model User {
-  id           String      @id @default(uuid())
-  name         String
-  email        String      @unique
-  password     String
-  role         String      @default("STUDENT") // STUDENT, FACULTY, ADMIN
-  department   String?
-  phone        String?
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  id         Int       @id @default(autoincrement())
+  name       String
+  email      String    @unique
+  password   String
+  role       String    @default("STUDENT")
+  department String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
-  bookings     Booking[]   @relation("UserBookings")
-  approvals    BookingApproval[] @relation("ApprovedBy")
+  bookings   Booking[]
+  feedbacks  Feedback[]
   notifications Notification[]
-  feedback     Feedback[]
-  auditLogs    AuditLog[]
-  checkIns     CheckIn[]
-}
-
-model Building {
-  id                     String     @id @default(uuid())
-  name                   String
-  code                   String     @unique
-  totalFloors            Int        @default(1)
-  energyEfficiencyRating Int        @default(85)
-  createdAt              DateTime   @default(now())
-
-  resources              Resource[]
-}
-
-model ResourceType {
-  id          String     @id @default(uuid())
-  name        String     @unique
-  category    String     // CLASSROOM, SMART_CLASSROOM, COMPUTER_LAB, SEMINAR_HALL, AUDITORIUM, MEETING_ROOM, SPORTS_GROUND, EQUIPMENT
-  description String?
-  createdAt   DateTime   @default(now())
-
-  resources   Resource[]
+  maintenanceLogs MaintenanceLog[]
 }
 
 model Resource {
-  id                    String       @id @default(uuid())
-  name                  String
-  typeId                String
-  buildingId            String
-  floor                 Int          @default(1)
-  roomNumber            String
-  capacity              Int
-  description           String?
-  facilities            String       @default("[]") // JSON string array of facilities
-  availableEquipment    String       @default("[]") // JSON string array of equipment
-  images                String       @default("[]") // JSON string array of image URLs
-  operatingHoursStart   String       @default("08:00")
-  operatingHoursEnd     String       @default("22:00")
-  status                String       @default("AVAILABLE") // AVAILABLE, BOOKED, MAINTENANCE, OUT_OF_SERVICE
-  maintenanceStatus     String?      @default("NONE")
-  energyEfficiencyRating Int         @default(85) // 0-100
-  ecoScore              Int          @default(85) // 0-100
-  basePowerConsumptionKw Float       @default(2.5) // kW per hour
-  hourlyCost            Float        @default(0.0)
-  createdAt             DateTime     @default(now())
-  updatedAt             DateTime     @updatedAt
+  id                     Int       @id @default(autoincrement())
+  name                   String
+  roomNumber             String
+  type                   String
+  capacity               Int
+  building               String
+  floor                  Int
+  facilities             String
+  status                 String    @default("AVAILABLE")
+  ecoScore               Int?
+  basePowerConsumptionKw Float?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
-  type                  ResourceType @relation(fields: [typeId], references: [id])
-  building              Building     @relation(fields: [buildingId], references: [id])
-  bookings              Booking[]
-  maintenances          Maintenance[]
-  feedbacks             Feedback[]
+  bookings   Booking[]
+  feedbacks  Feedback[]
+  maintenanceLogs MaintenanceLog[]
 }
 
 model Booking {
-  id                 String            @id @default(uuid())
-  bookingCode        String            @unique
-  userId             String
-  resourceId         String
-  purpose            String
-  eventType          String            @default("ACADEMIC") // ACADEMIC, EVENT, WORKSHOP, EXAM, MEETING, PERSONAL
-  attendeeCount      Int
-  requestedFacilities String           @default("[]") // JSON string
-  date               String            // YYYY-MM-DD
-  startTime          String            // HH:MM
-  endTime            String            // HH:MM
-  status             String            @default("PENDING") // PENDING, APPROVED, REJECTED, CANCELLED, CHECKED_IN, CHECKED_OUT, NO_SHOW
-  rejectionReason    String?
-  isRecurring        Boolean           @default(false)
-  recurringPattern   String?           // DAILY, WEEKLY, MONTHLY
-  qrCodeData         String?
-  checkedInAt        DateTime?
-  checkedOutAt       DateTime?
-  estimatedEnergyKwh Float             @default(0.0)
-  ecoScoreCalculated Int               @default(85)
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
+  id            Int       @id @default(autoincrement())
+  userId        Int
+  resourceId    Int
+  date          String
+  startTime     String
+  endTime       String
+  purpose       String
+  status        String    @default("PENDING")
+  attendeeCount Int?
+  bookingCode   String    @unique
+  checkedInAt   DateTime?
+  checkedOutAt  DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  user               User              @relation("UserBookings", fields: [userId], references: [id])
-  resource           Resource          @relation(fields: [resourceId], references: [id])
-  approvals          BookingApproval[]
-  checkIns           CheckIn[]
-  feedbacks          Feedback[]
-}
-
-model BookingApproval {
-  id           String   @id @default(uuid())
-  bookingId    String
-  approvedById String
-  status       String   // APPROVED, REJECTED
-  remarks      String?
-  createdAt    DateTime @default(now())
-
-  booking      Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  approvedBy   User     @relation("ApprovedBy", fields: [approvedById], references: [id])
-}
-
-model CheckIn {
-  id           String    @id @default(uuid())
-  bookingId    String
-  userId       String
-  checkInTime  DateTime  @default(now())
-  checkOutTime DateTime?
-  status       String    @default("CHECKED_IN") // CHECKED_IN, CHECKED_OUT
-  createdAt    DateTime  @default(now())
-
-  booking      Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  user         User      @relation(fields: [userId], references: [id])
-}
-
-model Maintenance {
-  id                 String    @id @default(uuid())
-  resourceId         String
-  issue              String
-  description        String?
-  reportedDate       DateTime  @default(now())
-  expectedCompletion DateTime?
-  priority           String    @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
-  assignedStaff      String?
-  status             String    @default("REPORTED") // REPORTED, IN_PROGRESS, COMPLETED, CANCELLED
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
-
-  resource           Resource  @relation(fields: [resourceId], references: [id], onDelete: Cascade)
-}
-
-model Notification {
-  id        String   @id @default(uuid())
-  userId    String
-  title     String
-  message   String
-  type      String   @default("INFO") // BOOKING_CREATED, BOOKING_APPROVED, BOOKING_REJECTED, BOOKING_CANCELLED, UPCOMING_REMINDER, CHECKIN_REMINDER, NO_SHOW, MAINTENANCE_UPDATE
-  isRead    Boolean  @default(false)
-  createdAt DateTime @default(now())
-
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user          User      @relation(fields: [userId], references: [id])
+  resource      Resource  @relation(fields: [resourceId], references: [id])
 }
 
 model Feedback {
-  id                String   @id @default(uuid())
-  bookingId         String
-  userId            String
-  resourceId        String
-  rating            Int      // 1-5
-  comments          String?
-  resourceCondition String?  // EXCELLENT, GOOD, FAIR, POOR
-  cleanliness       String?  // EXCELLENT, GOOD, FAIR, POOR
-  equipmentQuality  String?  // EXCELLENT, GOOD, FAIR, POOR
-  createdAt         DateTime @default(now())
+  id          Int       @id @default(autoincrement())
+  userId      Int
+  resourceId  Int
+  rating      Int
+  comment     String?
+  createdAt   DateTime  @default(now())
 
-  booking           Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  user              User     @relation(fields: [userId], references: [id])
-  resource          Resource @relation(fields: [resourceId], references: [id])
+  user        User      @relation(fields: [userId], references: [id])
+  resource    Resource  @relation(fields: [resourceId], references: [id])
 }
 
-model AuditLog {
-  id        String   @id @default(uuid())
-  userId    String?
-  action    String
-  entity    String
-  entityId  String?
-  details   String?
-  createdAt DateTime @default(now())
+model Notification {
+  id          Int       @id @default(autoincrement())
+  userId      Int
+  title       String
+  message     String
+  isRead      Boolean   @default(false)
+  createdAt   DateTime  @default(now())
 
-  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user        User      @relation(fields: [userId], references: [id])
 }
 
-model SystemSetting {
-  id          String   @id @default(uuid())
-  key         String   @unique
-  value       String
-  description String?
-  updatedAt   DateTime @updatedAt
+model MaintenanceLog {
+  id          Int       @id @default(autoincrement())
+  resourceId  Int
+  userId      Int
+  reason      String?
+  startTime   DateTime  @default(now())
+  endTime     DateTime?
+
+  resource    Resource  @relation(fields: [resourceId], references: [id])
+  user        User      @relation(fields: [userId], references: [id])
 }

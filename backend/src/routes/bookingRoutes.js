@@ -1,30 +1,13 @@
 const express = require('express');
-const {
-  checkAvailability,
-  recommendResources,
-  createBooking,
-  getBookings,
-  getBookingById,
-  cancelBooking,
-  approveBooking,
-  rejectBooking
-} = require('../controllers/bookingController');
-const { authenticate, authorize } = require('../middleware/authMiddleware');
-
 const router = express.Router();
+const bookingController = require('../controllers/bookingController');
+const authMiddleware = require('../middleware/authMiddleware');
 
-router.post('/check-availability', checkAvailability);
-router.post('/recommend', recommendResources);
-
-router.use(authenticate);
-
-router.get('/', getBookings);
-router.post('/', createBooking);
-router.get('/:id', getBookingById);
-router.patch('/:id/cancel', cancelBooking);
-
-// Approval routes for Admin & Faculty
-router.post('/:id/approve', authorize(['ADMIN', 'FACULTY']), approveBooking);
-router.post('/:id/reject', authorize(['ADMIN', 'FACULTY']), rejectBooking);
+router.post('/', authMiddleware, bookingController.create);
+router.get('/my', authMiddleware, bookingController.getMyBookings);
+router.get('/:id', authMiddleware, bookingController.getOne);
+router.put('/:id/cancel', authMiddleware, bookingController.cancel);
+router.post('/check-availability', authMiddleware, bookingController.checkAvailability);
+router.post('/recommend', authMiddleware, bookingController.recommend);
 
 module.exports = router;

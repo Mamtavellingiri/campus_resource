@@ -1,12 +1,10 @@
 const express = require('express');
-const { processCheckIn, processCheckOut } = require('../controllers/checkInController');
-const { authenticate } = require('../middleware/authMiddleware');
-
 const router = express.Router();
+const checkInController = require('../controllers/checkInController');
+const authMiddleware = require('../middleware/authMiddleware');
 
-router.use(authenticate);
-
-router.post('/scan', processCheckIn);
-router.post('/checkout', processCheckOut);
+router.post('/scan', authMiddleware, checkInController.scan);
+router.post('/checkout', authMiddleware, checkInController.checkout);
+router.get('/booking/:bookingId', authMiddleware, checkInController.getBookingStatus);
 
 module.exports = router;

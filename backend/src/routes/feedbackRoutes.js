@@ -1,12 +1,10 @@
 const express = require('express');
-const { submitFeedback, getAllFeedback } = require('../controllers/feedbackController');
-const { authenticate, authorize } = require('../middleware/authMiddleware');
-
 const router = express.Router();
+const feedbackController = require('../controllers/feedbackController');
+const authMiddleware = require('../middleware/authMiddleware');
 
-router.use(authenticate);
-
-router.post('/', submitFeedback);
-router.get('/', authorize(['ADMIN', 'FACULTY']), getAllFeedback);
+router.post('/', authMiddleware, feedbackController.create);
+router.get('/', authMiddleware, feedbackController.getAll);
+router.get('/resource/:resourceId', authMiddleware, feedbackController.getByResource);
 
 module.exports = router;

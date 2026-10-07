@@ -1,137 +1,115 @@
 import React, { useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Leaf, Shield, Briefcase, GraduationCap, ArrowRight, Lock, Mail, AlertCircle, Sparkles } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
+import { LogIn, Mail, Lock, GraduationCap } from 'lucide-react';
 
-export default function LoginPage() {
+const LoginPage = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState(null);
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
 
-  const handleLogin = async (e, overrideEmail, overridePassword) => {
-    if (e) e.preventDefault();
-    setError(null);
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
     setLoading(true);
 
-    const loginEmail = overrideEmail || email;
-    const loginPassword = overridePassword || password;
+    if (!email || !password) {
+      setError('❌ Email and password are required');
+      setLoading(false);
+      return;
+    }
 
     try {
-      const res = await login(loginEmail, loginPassword);
-      if (res.success) {
-        if (res.user.role === 'ADMIN') navigate('/dashboard/admin');
-        else if (res.user.role === 'FACULTY') navigate('/dashboard/faculty');
-        else navigate('/dashboard/student');
+      const response = await login(email, password);
+      console.log('Login response:', response); // Debug log
+      
+      if (response.success) {
+        const role = response.user?.role?.toLowerCase();
+        console.log('User role:', role); // Debug log
+        
+        // ✅ Redirect based on role
+        if (role === 'admin') {
+          navigate('/admin/dashboard');
+        } else if (role === 'faculty') {
+          navigate('/faculty/dashboard');
+        } else if (role === 'student') {
+          navigate('/student/dashboard');
+        } else {
+          // Fallback - if no role match, go to student dashboard
+          navigate('/student/dashboard');
+        }
+      } else {
+        setError(response.message || 'Login failed');
       }
     } catch (err) {
-      setError(err.response?.data?.message || 'Login failed. Please check credentials.');
+      console.error('Login error:', err);
+      setError(err.response?.data?.message || '❌ Login failed. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 selection:bg-emerald-500/20 selection:text-emerald-300">
-      
-      <div className="w-full max-w-md">
-        
-        {/* Logo Header */}
-        <div className="text-center mb-6">
-          <Link to="/" className="inline-flex items-center gap-2 mb-2">
-            <div className="w-9 h-9 rounded-xl bg-slate-900 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
-              <Leaf className="w-4 h-4" />
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950/70 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full space-y-8">
+        <div className="text-center">
+          <div className="flex justify-center">
+            <div className="h-16 w-16 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl flex items-center justify-center shadow-lg">
+              <GraduationCap className="h-8 w-8 text-white" />
             </div>
-            <span className="font-bold text-xl tracking-tight text-white">
-              Campus<span className="text-emerald-400 font-semibold">Hub</span>
-            </span>
-          </Link>
-          <h2 className="text-lg font-bold text-slate-100">Sign In to Your Account</h2>
-          <p className="text-xs text-slate-400">Manage & book campus resources</p>
+          </div>
+          <h2 className="mt-4 text-3xl font-bold text-slate-100">Bannari Amman Institute of Technology</h2>
+          <p className="mt-2 text-sm text-slate-400">Sign in manually with your individual BIT account</p>
         </div>
 
-        {/* ONE-CLICK DEMO LOGIN BUTTONS CARD */}
-        <div className="glass-panel p-4 rounded-2xl border border-slate-800 mb-5">
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400 mb-1">
-            <Sparkles className="w-3.5 h-3.5" />
-            ONE-CLICK DEMO LOGINS
-          </div>
-          <p className="text-[11px] text-slate-400 mb-2.5">Click any account role to log in instantly:</p>
-          
-          <div className="grid grid-cols-3 gap-2">
-            <button
-              onClick={() => handleLogin(null, 'admin@campus.com', 'Admin@123')}
-              className="py-2 px-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-[11px] font-semibold flex flex-col items-center gap-1 transition-all"
-            >
-              <Shield className="w-3.5 h-3.5" />
-              ADMIN
-            </button>
-
-            <button
-              onClick={() => handleLogin(null, 'faculty@campus.com', 'Faculty@123')}
-              className="py-2 px-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 text-[11px] font-semibold flex flex-col items-center gap-1 transition-all"
-            >
-              <Briefcase className="w-3.5 h-3.5" />
-              FACULTY
-            </button>
-
-            <button
-              onClick={() => handleLogin(null, 'student@campus.com', 'Student@123')}
-              className="py-2 px-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 text-[11px] font-semibold flex flex-col items-center gap-1 transition-all"
-            >
-              <GraduationCap className="w-3.5 h-3.5" />
-              STUDENT
-            </button>
-          </div>
-        </div>
-
-        {/* Main Login Form */}
-        <div className="glass-panel p-6 rounded-2xl border border-slate-800 shadow-xl">
-          
-          {searchParams.get('expired') && (
-            <div className="p-3 mb-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>Session expired. Please sign in again.</span>
-            </div>
-          )}
-
+        <div className="bg-slate-900/80 backdrop-blur-sm rounded-3xl shadow-2xl p-8 border border-slate-700/80">
           {error && (
-            <div className="p-3 mb-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{error}</span>
+            <div className="mb-4 bg-rose-500/10 border border-rose-500/30 p-4 rounded-xl">
+              <div className="flex items-center">
+                <span className="text-rose-400 mr-2">❌</span>
+                <p className="text-sm text-rose-300">{error}</p>
+              </div>
             </div>
           )}
 
-          <form onSubmit={handleLogin} className="space-y-3.5">
+          <form className="space-y-6" onSubmit={handleSubmit}>
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">Email Address</label>
+              <label htmlFor="email" className="block text-sm font-medium text-slate-200 mb-1">Email Address</label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Mail className="h-5 w-5 text-slate-500" />
+                </div>
                 <input
+                  id="email"
                   type="email"
-                  required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@campus.com"
-                  className="subtle-input w-full pl-9"
+                  className="block w-full pl-10 pr-3 py-2.5 border border-slate-700 bg-slate-900/90 text-slate-100 placeholder:text-slate-500 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500 transition-colors"
+                  placeholder="name@bitsathy.ac.in"
+                  required
+                  disabled={loading}
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">Password</label>
+              <label htmlFor="password" className="block text-sm font-medium text-slate-200 mb-1">Password</label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Lock className="h-5 w-5 text-slate-500" />
+                </div>
                 <input
+                  id="password"
                   type="password"
-                  required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="subtle-input w-full pl-9"
+                  className="block w-full pl-10 pr-3 py-2.5 border border-slate-700 bg-slate-900/90 text-slate-100 placeholder:text-slate-500 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500 transition-colors"
+                  placeholder="Enter your password"
+                  required
+                  disabled={loading}
                 />
               </div>
             </div>
@@ -139,23 +117,51 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="subtle-button-primary w-full py-2.5 flex items-center justify-center gap-1.5 mt-2"
+              className="w-full flex items-center justify-center py-3 px-4 bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-bold rounded-xl hover:from-emerald-400 hover:to-teal-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg"
             >
-              {loading ? 'Authenticating...' : 'Sign In'}
-              <ArrowRight className="w-3.5 h-3.5" />
+              {loading ? (
+                <span className="flex items-center">
+                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Signing in...
+                </span>
+              ) : (
+                <>
+                  <LogIn className="h-5 w-5 mr-2" />
+                  Sign In
+                </>
+              )}
             </button>
           </form>
 
-          <div className="mt-5 text-center text-xs text-slate-400">
-            Don't have an account?{' '}
-            <Link to="/register" className="text-emerald-400 font-semibold hover:underline">
-              Create account
-            </Link>
+          <div className="mt-6 text-center">
+            <p className="text-sm text-slate-400">
+              Don't have an account?{' '}
+              <Link to="/register" className="font-semibold text-emerald-400 hover:text-emerald-300 transition-colors">
+                Create Account
+              </Link>
+            </p>
+          </div>
+
+          {/* Demo Credentials */}
+          <div className="mt-4 p-4 bg-slate-800/50 rounded-xl border border-slate-700">
+            <p className="text-xs text-center text-slate-400 font-medium mb-2">🎓 Demo Credentials</p>
+            <div className="space-y-1 text-xs text-slate-500">
+              <p>👑 Admin: admin@campus.com / Admin@123</p>
+              <p>👨‍🏫 Faculty: faculty@campus.com / Faculty@123</p>
+              <p>🎒 Student: student@campus.com / Student@123</p>
+            </div>
           </div>
         </div>
 
+        <div className="text-center">
+          <p className="text-xs text-slate-500">© 2026 Bannari Amman Institute of Technology — Resource Booking</p>
+        </div>
       </div>
-
     </div>
   );
-}
+};
+
+export default LoginPage;

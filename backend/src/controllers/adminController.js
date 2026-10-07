@@ -1,7 +1,17 @@
 const prisma = require('../config/prisma');
 
-const getAllUsers = async (req, res) => {
+// @desc    Get all users
+// @route   GET /api/admin/users
+// @access  Private (Admin only)
+exports.getUsers = async (req, res) => {
   try {
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({
+        success: false,
+        message: '❌ Admin access required'
+      });
+    }
+
     const users = await prisma.user.findMany({
       select: {
         id: true,
@@ -9,106 +19,180 @@ const getAllUsers = async (req, res) => {
         email: true,
         role: true,
         department: true,
-        phone: true,
-        createdAt: true,
-        _count: { select: { bookings: true } }
+        createdAt: true
       },
       orderBy: { createdAt: 'desc' }
     });
 
-    return res.json({ success: true, count: users.length, users });
+    res.json({
+      success: true,
+      count: users.length,
+      users
+    });
+
   } catch (error) {
-    return res.status(500).json({ success: false, message: 'Failed to fetch users.', error: error.message });
+    console.error('Get users error:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ Server error'
+    });
   }
 };
 
-const updateUserRole = async (req, res) => {
+// @desc    Update user role
+// @route   PUT /api/admin/users/:id/role
+// @access  Private (Admin only)
+exports.updateUserRole = async (req, res) => {
   try {
-    const { id } = req.params;
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({
+        success: false,
+        message: '❌ Admin access required'
+      });
+    }
+
+    const id = parseInt(req.params.id);
     const { role } = req.body;
 
-    if (!['STUDENT', 'FACULTY', 'ADMIN'].includes(role)) {
-      return res.status(400).json({ success: false, message: 'Invalid role specified.' });
+    if (!role || !['ADMIN', 'FACULTY', 'STUDENT'].includes(role)) {
+      return res.status(400).json({
+        success: false,
+        message: '❌ Invalid role'
+      });
     }
 
-    const updated = await prisma.user.update({
+    const user = await prisma.user.update({
       where: { id },
       data: { role },
-      select: { id: true, name: true, email: true, role: true }
-    });
-
-    await prisma.auditLog.create({
-      data: {
-        userId: req.user.id,
-        action: 'UPDATE_USER_ROLE',
-        entity: 'USER',
-        entityId: id,
-        details: `Updated role of ${updated.name} (${updated.email}) to ${role}`
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        department: true
       }
     });
 
-    return res.json({ success: true, message: `User role updated to ${role}`, user: updated });
-  } catch (error) {
-    return res.status(500).json({ success: false, message: 'Failed to update user role.', error: error.message });
-  }
-};
-
-const getAuditLogs = async (req, res) => {
-  try {
-    const logs = await prisma.auditLog.findMany({
-      include: { user: { select: { name: true, email: true, role: true } } },
-      orderBy: { createdAt: 'desc' },
-      take: 50
+    res.json({
+      success: true,
+      message: '✅ User role updated successfully!',
+      user
     });
 
-    return res.json({ success: true, count: logs.length, logs });
   } catch (error) {
-    return res.status(500).json({ success: false, message: 'Failed to fetch audit logs.', error: error.message });
+    console.error('Update user role error:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ Server error'
+    });
   }
 };
 
-const getSystemSettings = async (req, res) => {
+// @desc    Get all bookings (admin view)
+// @route   GET /api/admin/bookings
+// @access  Private (Admin only)
+exports.getAllBookings = async (req, res) => {
   try {
-    const settings = await prisma.systemSetting.findMany();
-    return res.json({ success: true, settings });
-  } catch (error) {
-    return res.status(500).json({ success: false, message: 'Failed to fetch system settings.', error: error.message });
-  }
-};
-
-const updateSystemSetting = async (req, res) => {
-  try {
-    const { key, value } = req.body;
-
-    if (!key || value === undefined) {
-      return res.status(400).json({ success: false, message: 'Setting key and value are required.' });
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({
+        success: false,
+        message: '❌ Admin access required'
+      });
     }
 
-    const setting = await prisma.systemSetting.upsert({
-      where: { key },
-      update: { value: String(value) },
-      create: { key, value: String(value), description: 'Configured by Admin' }
+    const bookings = await prisma.booking.findMany({
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        },
+        resource: true
+      },
+      orderBy: { createdAt: 'desc' }
     });
 
-    await prisma.auditLog.create({
-      data: {
-        userId: req.user.id,
-        action: 'UPDATE_SETTING',
-        entity: 'SETTING',
-        details: `Changed system setting ${key} = ${value}`
-      }
+    res.json({
+      success: true,
+      count: bookings.length,
+      bookings
     });
 
-    return res.json({ success: true, message: `Setting ${key} updated successfully!`, setting });
   } catch (error) {
-    return res.status(500).json({ success: false, message: 'Failed to update system setting.', error: error.message });
+    console.error('Get all bookings error:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ Server error'
+    });
   }
 };
 
-module.exports = {
-  getAllUsers,
-  updateUserRole,
-  getAuditLogs,
-  getSystemSettings,
-  updateSystemSetting
+// @desc    Update booking status
+// @route   PUT /api/admin/bookings/:id/status
+// @access  Private (Admin only)
+exports.updateBookingStatus = async (req, res) => {
+  try {
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({
+        success: false,
+        message: '❌ Admin access required'
+      });
+    }
+
+    const id = parseInt(req.params.id);
+    const { status } = req.body;
+
+    if (!status || !['PENDING', 'APPROVED', 'REJECTED', 'CANCELLED'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: '❌ Invalid status'
+      });
+    }
+
+    const booking = await prisma.booking.update({
+      where: { id },
+      data: { status },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        },
+        resource: true
+      }
+    });
+
+    // If booking is approved, update resource status to BOOKED
+    if (status === 'APPROVED') {
+      await prisma.resource.update({
+        where: { id: booking.resourceId },
+        data: { status: 'BOOKED' }
+      });
+    }
+
+    // If booking is rejected or cancelled, release resource
+    if (status === 'REJECTED' || status === 'CANCELLED') {
+      await prisma.resource.update({
+        where: { id: booking.resourceId },
+        data: { status: 'AVAILABLE' }
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `✅ Booking ${status.toLowerCase()} successfully!`,
+      booking
+    });
+
+  } catch (error) {
+    console.error('Update booking status error:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ Server error'
+    });
+  }
 };

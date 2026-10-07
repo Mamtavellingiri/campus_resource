@@ -1,22 +1,12 @@
 const express = require('express');
-const {
-  getAllUsers,
-  updateUserRole,
-  getAuditLogs,
-  getSystemSettings,
-  updateSystemSetting
-} = require('../controllers/adminController');
-const { authenticate, authorize } = require('../middleware/authMiddleware');
-
 const router = express.Router();
+const adminController = require('../controllers/adminController');
+const authMiddleware = require('../middleware/authMiddleware');
 
-router.use(authenticate);
-router.use(authorize(['ADMIN']));
-
-router.get('/users', getAllUsers);
-router.patch('/users/:id/role', updateUserRole);
-router.get('/audit-logs', getAuditLogs);
-router.get('/settings', getSystemSettings);
-router.put('/settings', updateSystemSetting);
+router.use(authMiddleware);
+router.get('/users', adminController.getUsers);
+router.put('/users/:id/role', adminController.updateUserRole);
+router.get('/bookings', adminController.getAllBookings);
+router.put('/bookings/:id/status', adminController.updateBookingStatus);
 
 module.exports = router;

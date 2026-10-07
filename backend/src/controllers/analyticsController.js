@@ -1,156 +1,148 @@
 const prisma = require('../config/prisma');
 
-const getSystemOverview = async (req, res) => {
+// @desc    Get energy analytics
+// @route   GET /api/analytics/energy
+// @access  Private
+exports.getEnergyAnalytics = async (req, res) => {
   try {
-    const totalResources = await prisma.resource.count();
-    const availableResources = await prisma.resource.count({ where: { status: 'AVAILABLE' } });
-    const maintenanceResources = await prisma.resource.count({ where: { status: 'MAINTENANCE' } });
+    // Get all resources with energy data
+    const resources = await prisma.resource.findMany({
+      where: {
+        basePowerConsumptionKw: { not: null }
+      },
+      select: {
+        id: true,
+        name: true,
+        building: true,
+        ecoScore: true,
+        basePowerConsumptionKw: true
+      }
+    });
 
+    // Get booking statistics
     const totalBookings = await prisma.booking.count();
-    const activeBookings = await prisma.booking.count({ where: { status: 'CHECKED_IN' } });
-    const pendingApprovals = await prisma.booking.count({ where: { status: 'PENDING' } });
-    const noShowCount = await prisma.booking.count({ where: { status: 'NO_SHOW' } });
+    const activeBookings = await prisma.booking.count({
+      where: {
+        status: 'CHECKED_IN'
+      }
+    });
 
-    const todayStr = new Date().toISOString().split('T')[0];
-    const todayBookingsCount = await prisma.booking.count({ where: { date: todayStr } });
+    // Calculate estimated energy consumption
+    let totalEnergy = 0;
+    let ecoScores = [];
 
-    // Utilization calculation
-    const totalResourceHours = totalResources * 12; // 12 operating hrs/day
-    const utilizationRate = totalResourceHours > 0
-      ? Math.min(100, Math.round(((activeBookings + todayBookingsCount) * 2 / totalResourceHours) * 100))
+    resources.forEach(resource => {
+      if (resource.basePowerConsumptionKw) {
+        totalEnergy += resource.basePowerConsumptionKw;
+      }
+      if (resource.ecoScore) {
+        ecoScores.push(resource.ecoScore);
+      }
+    });
+
+    const avgEcoScore = ecoScores.length > 0
+      ? Math.round(ecoScores.reduce((a, b) => a + b, 0) / ecoScores.length)
       : 0;
 
-    // Energy Metrics (kWh)
-    const energyData = await prisma.booking.aggregate({
-      _sum: { estimatedEnergyKwh: true },
-      _avg: { ecoScoreCalculated: true }
+    // Building breakdown
+    const buildingMap = {};
+    resources.forEach(resource => {
+      if (!buildingMap[resource.building]) {
+        buildingMap[resource.building] = {
+          building: resource.building,
+          energy: 0,
+          count: 0
+        };
+      }
+      buildingMap[resource.building].energy += resource.basePowerConsumptionKw || 0;
+      buildingMap[resource.building].count += 1;
     });
 
-    const totalEnergyKwh = Math.round(energyData._sum.estimatedEnergyKwh || 124.5);
-    const avgEcoScore = Math.round(energyData._avg.ecoScoreCalculated || 91);
-    const estimatedSavingsKwh = Math.round(totalEnergyKwh * 0.22); // 22% saved via smart scheduling
+    const buildingBreakdown = Object.values(buildingMap);
 
-    return res.json({
+    res.json({
       success: true,
-      metrics: {
-        totalResources,
-        availableResources,
-        maintenanceResources,
+      data: {
+        totalResources: resources.length,
         totalBookings,
         activeBookings,
-        pendingApprovals,
-        noShowCount,
-        todayBookingsCount,
-        utilizationRate,
-        totalEnergyKwh,
-        avgEcoScore,
-        estimatedSavingsKwh
-      }
-    });
-  } catch (error) {
-    return res.status(500).json({ success: false, message: 'Failed to fetch overview metrics.', error: error.message });
-  }
-};
-
-const getEnergyAnalytics = async (req, res) => {
-  try {
-    const bookings = await prisma.booking.findMany({
-      include: { resource: { include: { building: true, type: true } } },
-      take: 100,
-      orderBy: { createdAt: 'desc' }
-    });
-
-    // Building Energy Breakdown
-    const buildingMap = {};
-    bookings.forEach(b => {
-      const bName = b.resource?.building?.name || 'Main Campus';
-      if (!buildingMap[bName]) {
-        buildingMap[bName] = { name: bName, totalEnergyKwh: 0, bookingCount: 0, avgEcoScore: 0, scoreSum: 0 };
-      }
-      buildingMap[bName].totalEnergyKwh += b.estimatedEnergyKwh || 0;
-      buildingMap[bName].bookingCount += 1;
-      buildingMap[bName].scoreSum += b.ecoScoreCalculated || 85;
-    });
-
-    const buildingBreakdown = Object.values(buildingMap).map(b => ({
-      ...b,
-      totalEnergyKwh: Number(b.totalEnergyKwh.toFixed(1)),
-      avgEcoScore: Math.round(b.scoreSum / (b.bookingCount || 1))
-    }));
-
-    // Monthly / Weekly Eco Trend Data (Synthetic populated curve + real counts)
-    const ecoTrendData = [
-      { month: 'Jan', consumptionKwh: 450, savedKwh: 98, ecoScore: 86 },
-      { month: 'Feb', consumptionKwh: 420, savedKwh: 110, ecoScore: 88 },
-      { month: 'Mar', consumptionKwh: 390, savedKwh: 125, ecoScore: 90 },
-      { month: 'Apr', consumptionKwh: 360, savedKwh: 140, ecoScore: 92 },
-      { month: 'May', consumptionKwh: 340, savedKwh: 155, ecoScore: 94 },
-      { month: 'Jun', consumptionKwh: 310, savedKwh: 168, ecoScore: 95 }
-    ];
-
-    // Most energy consuming vs most energy efficient resources
-    const topGreenResources = await prisma.resource.findMany({
-      take: 5,
-      orderBy: { ecoScore: 'desc' },
-      include: { building: true, type: true }
-    });
-
-    const topConsumingResources = await prisma.resource.findMany({
-      take: 5,
-      orderBy: { basePowerConsumptionKw: 'desc' },
-      include: { building: true, type: true }
-    });
-
-    return res.json({
-      success: true,
-      analytics: {
+        totalEnergyConsumption: Math.round(totalEnergy * 100) / 100,
+        averageEcoScore: avgEcoScore,
         buildingBreakdown,
-        ecoTrendData,
-        topGreenResources,
-        topConsumingResources
+        resources: resources.map(r => ({
+          ...r,
+          energyUsageKwh: r.basePowerConsumptionKw
+        }))
       }
     });
+
   } catch (error) {
-    return res.status(500).json({ success: false, message: 'Failed to fetch energy analytics.', error: error.message });
+    console.error('Energy analytics error:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ Server error'
+    });
   }
 };
 
-const getUtilizationAnalytics = async (req, res) => {
+// @desc    Get eco scores
+// @route   GET /api/analytics/eco-scores
+// @access  Private
+exports.getEcoScores = async (req, res) => {
   try {
     const resources = await prisma.resource.findMany({
-      include: {
-        type: true,
+      where: {
+        ecoScore: { not: null }
+      },
+      select: {
+        id: true,
+        name: true,
         building: true,
-        _count: { select: { bookings: true } }
+        ecoScore: true,
+        basePowerConsumptionKw: true
+      },
+      orderBy: {
+        ecoScore: 'desc'
       }
     });
 
-    const resourceUtilization = resources.map(r => ({
-      name: r.name,
-      type: r.type.category,
-      building: r.building.name,
-      totalBookings: r._count.bookings,
-      capacity: r.capacity,
-      ecoScore: r.ecoScore
-    }));
-
-    // Department Usage stats
-    const deptBookings = await prisma.booking.groupBy({
-      by: ['userId'],
-      _count: { id: true }
+    // Group by building
+    const buildingMap = {};
+    resources.forEach(resource => {
+      if (!buildingMap[resource.building]) {
+        buildingMap[resource.building] = {
+          building: resource.building,
+          resources: [],
+          avgScore: 0,
+          totalScore: 0,
+          count: 0
+        };
+      }
+      buildingMap[resource.building].resources.push(resource);
+      buildingMap[resource.building].totalScore += resource.ecoScore || 0;
+      buildingMap[resource.building].count += 1;
     });
 
-    return res.json({
+    Object.values(buildingMap).forEach(building => {
+      building.avgScore = Math.round(building.totalScore / building.count);
+    });
+
+    const buildingScores = Object.values(buildingMap);
+
+    res.json({
       success: true,
-      resourceUtilization
+      data: {
+        topResources: resources.slice(0, 5),
+        buildingScores,
+        allResources: resources
+      }
     });
-  } catch (error) {
-    return res.status(500).json({ success: false, message: 'Failed to fetch utilization analytics.', error: error.message });
-  }
-};
 
-module.exports = {
-  getSystemOverview,
-  getEnergyAnalytics,
-  getUtilizationAnalytics
+  } catch (error) {
+    console.error('Eco scores error:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ Server error'
+    });
+  }
 };
