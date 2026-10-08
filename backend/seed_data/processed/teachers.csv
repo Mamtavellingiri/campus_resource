@@ -1,0 +1,11 @@
+teacher_id,name,email,contact_number,department
+1,David Mwangi,david.mwangi@example.com,+254720123456,Computer Science Engineering
+2,Grace Kimani,grace.kimani@example.com,+256755678901,Computer Science Engineering
+3,Mohammed Abdi,mohammed.abdi@example.com,+252634567890,Computer Science Engineering
+4,Alice Wambua,alice.wambua@example.com,+255712345678,Computer Science Engineering
+5,Peter Njoroge,peter.njoroge@example.com,+254723456789,Computer Science Engineering
+6,Amina Omar,amina.omar@example.com,+25366123456,Computer Science Engineering
+7,Joseph Kassim,joseph.kassim@example.com,+251911234567,Computer Science Engineering
+8,Wanjiru Kamau,wanjiru.kamau@example.com,+250782345678,Computer Science Engineering
+9,Moses Tewolde,moses.tewolde@example.com,+291712345678,Computer Science Engineering
+10,Aisha Said,aisha.said@example.com,+255765432109,Computer Science Engineering

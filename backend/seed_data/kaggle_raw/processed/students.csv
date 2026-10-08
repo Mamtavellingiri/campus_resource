@@ -1,0 +1,21 @@
+student_id,name,email,contact_number,year_id,section
+1,John Makori,john.makori@example.com,+254712345678,1,A
+2,Amina Njoroge,amina.njoroge@example.com,+254723456789,2,A
+3,Daniel Girma,daniel.girma@example.com,+251911234567,3,A
+4,Sara Kibet,sara.kibet@example.com,+256755678901,1,B
+5,Moses Kimani,moses.kimani@example.com,+255712345678,2,B
+6,Zainab Said,zainab.said@example.com,+255765432109,3,B
+7,Patrick Kamau,patrick.kamau@example.com,+254700123456,1,A
+8,Aisha Mohammed,aisha.mohammed@example.com,+254711223344,2,A
+9,Abdi Nur,abdi.nur@example.com,+252612345678,3,A
+10,Elsa Makamba,elsa.makamba@example.com,+250782345678,1,B
+11,Omar Kassim,omar.kassim@example.com,+25366123456,2,B
+12,Grace Wambui,grace.wambui@example.com,+254733987654,3,B
+13,Yohannes Tesfaye,yohannes.tesfaye@example.com,+251922345678,1,A
+14,Halima Abdi,halima.abdi@example.com,+252634567890,2,A
+15,Robert Oduor,robert.oduor@example.com,+254710123456,3,A
+16,Nadia Gebre,nadia.gebre@example.com,+291712345678,1,B
+17,Suleiman Ali,suleiman.ali@example.com,+252612345678,2,B
+18,Jane Muthoni,jane.muthoni@example.com,+254799876543,3,B
+19,Tewodros Berhanu,tewodros.berhanu@example.com,+251933456789,1,A
+20,Fatima Ali,fatima.ali@example.com,+252612345678,2,A
