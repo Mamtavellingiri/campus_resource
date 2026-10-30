@@ -15,6 +15,7 @@ export default function BookingHistoryPage() {
   const [selectedQRBooking, setSelectedQRBooking] = useState(null);
   const [selectedFeedbackBooking, setSelectedFeedbackBooking] = useState(null);
   const [selectedRescheduleBooking, setSelectedRescheduleBooking] = useState(null);
+  const [mappedFaculty, setMappedFaculty] = useState(user?.mappedFaculty || null);
 
   const fetchHistory = async () => {
     setLoading(true);
@@ -32,6 +33,11 @@ export default function BookingHistoryPage() {
 
   useEffect(() => {
     fetchHistory();
+    api.get('/auth/me')
+      .then((res) => {
+        if (res.data.success) setMappedFaculty(res.data.user.mappedFaculty || null);
+      })
+      .catch((err) => console.error(err));
   }, []);
 
   const handleCancel = async (id) => {
@@ -51,12 +57,12 @@ export default function BookingHistoryPage() {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-100 flex items-center gap-2">
             <QrCode className="w-6 h-6 text-emerald-400" />
-            {isStudent ? "My Year's Booking Schedule" : 'My Bookings & Access QR Codes'}
+            {isStudent ? `Classes from ${mappedFaculty?.name || 'your faculty'}` : 'My Bookings'}
           </h1>
           <p className="text-xs text-slate-400 mt-1">
             {isStudent
-              ? 'View the faculty-scheduled classes available to your academic year.'
-              : 'Track status, view digital QR passes, simulate check-ins, or provide post-use feedback'}
+              ? 'Read-only schedule of approved classes from your mapped faculty.'
+              : 'Track booking status, manage reservations, and provide post-use feedback'}
           </p>
         </div>
       </div>
@@ -65,7 +71,11 @@ export default function BookingHistoryPage() {
         <div className="p-12 text-center text-xs text-slate-400">Loading booking records...</div>
       ) : bookings.length === 0 ? (
         <div className="glass-panel p-12 rounded-3xl text-center text-xs text-slate-400">
-          {isStudent ? 'No class bookings are scheduled for your year yet.' : 'You have no booking records yet.'}
+          {isStudent
+            ? mappedFaculty
+              ? 'No approved classes are scheduled by your mapped faculty yet.'
+              : 'No faculty assigned to you yet. Please contact admin.'
+            : 'You have no booking records yet.'}
         </div>
       ) : (
         <div className="space-y-4">
@@ -85,7 +95,7 @@ export default function BookingHistoryPage() {
                     b.status === 'NO_SHOW' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' :
                     'bg-amber-500/20 text-amber-400'
                   }`}>
-                    {b.status}
+                    {b.status === 'PENDING' ? 'Awaiting admin approval' : b.status}
                   </span>
                 </div>
 
@@ -117,7 +127,7 @@ export default function BookingHistoryPage() {
               {/* Action Buttons */}
               {!isStudent && <div className="flex flex-wrap items-center gap-2 shrink-0">
                 
-                {(b.status === 'APPROVED' || b.status === 'CHECKED_IN') && (
+                {['APPROVED', 'CHECKED_IN'].includes(b.status) && b.qrCodeData && (
                   <button
                     onClick={() => setSelectedQRBooking(b)}
                     className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-bold text-xs hover:from-emerald-400 hover:to-teal-400 transition-all flex items-center gap-1.5 shadow-md"
@@ -162,7 +172,9 @@ export default function BookingHistoryPage() {
         </div>
       )}
 
-      {selectedQRBooking && (
+      {selectedQRBooking &&
+        ['APPROVED', 'CHECKED_IN', 'CHECKED_OUT'].includes(selectedQRBooking.status) &&
+        selectedQRBooking.qrCodeData && (
         <QRModal
           booking={selectedQRBooking}
           onClose={() => setSelectedQRBooking(null)}

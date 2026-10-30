@@ -28,7 +28,8 @@ export default function ConflictWarningModal({ conflictInfo, onClose, onPickAlte
         {/* Conflict Notice Box */}
         <div className="bg-rose-500/10 rounded-2xl p-4 border border-rose-500/20 text-xs mb-6">
           <div className="font-semibold text-rose-300 text-sm mb-1">
-            "Resource already booked from {conflictInfo.startTime || '2:00 PM'} to {conflictInfo.endTime || '4:00 PM'}."
+            {conflictInfo.message ||
+              `Resource already booked from ${conflictInfo.startTime || '2:00 PM'} to ${conflictInfo.endTime || '4:00 PM'}.`}
           </div>
           <div className="text-slate-400 text-xs">
             Event Purpose: <strong className="text-slate-200">{conflictInfo.purpose || 'Existing Academic Session'}</strong>

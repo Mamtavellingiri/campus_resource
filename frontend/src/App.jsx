@@ -15,6 +15,7 @@ import ResourceCatalogPage from './pages/ResourceCatalogPage';
 import ResourceDetailPage from './pages/ResourceDetailPage';
 import BookingCalendarPage from './pages/BookingCalendarPage';
 import BookingHistoryPage from './pages/BookingHistoryPage';
+import ActiveQRPage from './pages/ActiveQRPage';
 import NotificationsPage from './pages/NotificationsPage';
 import AdminResourceMgmtPage from './pages/AdminResourceMgmtPage';
 import AdminBookingMgmtPage from './pages/AdminBookingMgmtPage';
@@ -107,6 +108,14 @@ export default function App() {
               element={
                 <ProtectedRoute allowedRoles={['STUDENT', 'FACULTY', 'ADMIN']}>
                   <BookingHistoryPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/qr-passes"
+              element={
+                <ProtectedRoute allowedRoles={['FACULTY', 'STUDENT', 'ADMIN']}>
+                  <ActiveQRPage />
                 </ProtectedRoute>
               }
             />

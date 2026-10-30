@@ -10,14 +10,14 @@ const {
   updateResourceStatus,
   getBuildingsAndTypes
 } = require('../controllers/resourceController');
-const { authenticate, authorize } = require('../middleware/authMiddleware');
+const { authenticate, authenticateOptional, authorize } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
 router.get('/', getAllResources);
 router.get('/meta/categories', getBuildingsAndTypes);
 router.get('/archived', authenticate, authorize(['ADMIN']), getArchivedResources);
-router.get('/:id', getResourceById);
+router.get('/:id', authenticateOptional, getResourceById);
 
 // Admin-only endpoints
 router.post('/', authenticate, authorize(['ADMIN']), createResource);
@@ -27,4 +27,3 @@ router.patch('/:id/status', authenticate, authorize(['ADMIN', 'FACULTY']), updat
 router.patch('/:id/restore', authenticate, authorize(['ADMIN']), restoreResource);
 
 module.exports = router;
-

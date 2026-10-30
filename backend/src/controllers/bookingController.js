@@ -3,6 +3,19 @@ const { calculateBookingEnergyAndEcoScore } = require('../services/ecoService');
 const { getSmartRecommendations } = require('../services/recommendationService');
 const { promoteNext } = require('../services/waitlistService');
 
+const notifyMappedStudent = async (facultyId, title, message, type = 'BOOKING_APPROVED') => {
+  const mappings = await prisma.facultyStudentMap.findMany({
+    where: { facultyId },
+    include: { student: { select: { id: true } } }
+  });
+
+  for (const mapping of mappings) {
+    await prisma.notification.create({
+      data: { userId: mapping.student.id, title, message, type }
+    });
+  }
+};
+
 /**
  * Check real-time availability and prevent double booking!
  */
@@ -23,11 +36,27 @@ const checkAvailability = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Resource not found.' });
     }
 
-    if (['MAINTENANCE', 'OUT_OF_SERVICE'].includes(resource.status)) {
+    if (
+      ['MAINTENANCE', 'OUT_OF_SERVICE'].includes(resource.status) ||
+      (resource.maintenanceStatus && resource.maintenanceStatus !== 'NONE')
+    ) {
       return res.status(400).json({
         success: false,
         isAvailable: false,
-        message: `Resource is currently ${resource.status} and cannot be booked.`
+        message: ['MAINTENANCE', 'OUT_OF_SERVICE'].includes(resource.status)
+          ? `Resource is currently ${resource.status} and cannot be booked.`
+          : 'Resource is currently under maintenance and cannot be booked.'
+      });
+    }
+
+    const activeMaintenance = await prisma.maintenance.count({
+      where: { resourceId, status: { in: ['REPORTED', 'IN_PROGRESS'] } }
+    });
+    if (activeMaintenance > 0) {
+      return res.status(400).json({
+        success: false,
+        isAvailable: false,
+        message: 'Resource is currently under maintenance and cannot be booked.'
       });
     }
 
@@ -75,6 +104,7 @@ const recommendResources = async (req, res) => {
   try {
     const {
       resourceType,
+      eventType,
       date,
       startTime,
       endTime,
@@ -83,8 +113,16 @@ const recommendResources = async (req, res) => {
       preferredBuildingId
     } = req.body;
 
+    if (!date || !startTime || !endTime) {
+      return res.status(400).json({
+        success: false,
+        message: 'date, startTime, and endTime are required to find available resources.'
+      });
+    }
+
     const recommendations = await getSmartRecommendations({
       resourceType,
+      eventType,
       date,
       startTime,
       endTime,
@@ -325,11 +363,27 @@ const createBooking = async (req, res) => {
           }
         }
 
+        const currentResource = await tx.resource.findUnique({
+          where: { id: resourceId },
+          select: { status: true, maintenanceStatus: true }
+        });
+        const maintenanceLock = await tx.maintenance.count({
+          where: { resourceId, status: { in: ['REPORTED', 'IN_PROGRESS'] } }
+        });
+        if (
+          !currentResource ||
+          ['MAINTENANCE', 'OUT_OF_SERVICE'].includes(currentResource.status) ||
+          (currentResource.maintenanceStatus && currentResource.maintenanceStatus !== 'NONE') ||
+          maintenanceLock > 0
+        ) {
+          throw new Error('Resource is currently under maintenance and cannot be booked.');
+        }
+
         const bookingCode = await generateUniqueBookingCode(tx);
         
-        const qrData = JSON.stringify({
+        const qrData = initialStatus === 'APPROVED' ? JSON.stringify({
           bookingCode, userId, resourceId, date: d, startTime, endTime, issuedAt: new Date().toISOString()
-        });
+        }) : null;
 
         const newBooking = await tx.booking.create({
           data: {
@@ -370,7 +424,9 @@ const createBooking = async (req, res) => {
         data: {
           userId,
           title: initialStatus === 'APPROVED' ? 'Booking Confirmed & QR Ready' : 'Booking Request Submitted',
-          message: initialStatus === 'APPROVED' ? `Your booking for ${resource.name} on ${b.date} (${startTime} - ${endTime}) is APPROVED.` : `Your booking request for ${resource.name} on ${b.date} is PENDING.`,
+          message: initialStatus === 'APPROVED'
+            ? `Your booking for ${resource.name} on ${b.date} (${startTime} - ${endTime}) is approved. Your QR pass is now available in Active QR Passes.`
+            : `Your booking request for ${resource.name} on ${b.date} is PENDING.`,
           type: initialStatus === 'APPROVED' ? 'BOOKING_APPROVED' : 'BOOKING_CREATED'
         }
       });
@@ -385,7 +441,13 @@ const createBooking = async (req, res) => {
     });
   } catch (error) {
     if (error.message.includes('already booked') || error.message.includes('All requested dates have conflicts')) {
-       return res.status(409).json({ success: false, message: error.message });
+      return res.status(409).json({
+        success: false,
+        message: 'This resource is already booked or has a pending request for this time slot.'
+      });
+    }
+    if (error.message.includes('under maintenance')) {
+      return res.status(400).json({ success: false, message: error.message });
     }
     return res.status(500).json({ success: false, message: 'Failed to create booking.', error: error.message });
   }
@@ -395,42 +457,25 @@ const getBookings = async (req, res) => {
   try {
     const { status, date, resourceId } = req.query;
     const where = {};
-    const studentVisibleStatuses = ['APPROVED', 'CHECKED_IN', 'CHECKED_OUT'];
-
-    // ===================== NOVELTY: ROLE-BASED VISIBILITY =====================
-    // Students see only bookings made for THEIR year (they can't create their
-    // own bookings anymore, so "my bookings" is replaced by "bookings for my year").
-    // Faculty sees their own bookings + their department's; Admin sees all.
+    // Students see only approved bookings belonging to their mapped faculty.
     if (req.user.role === 'STUDENT') {
-      if (!req.user.year) {
-        // Student has no year assigned yet - show nothing rather than everything
+      const mapping = await prisma.facultyStudentMap.findUnique({
+        where: { studentId: req.user.id },
+        select: { facultyId: true }
+      });
+      if (!mapping) {
         where.id = '__none__';
       } else {
-        const enrollments = await prisma.studentCourseEnrollment.findMany({
-          where: {
-            studentId: req.user.id,
-            year: req.user.year,
-            ...(req.user.department ? { department: req.user.department } : {})
-          },
-          select: { subjectId: true }
-        });
-        const subjectIds = enrollments.map((enrollment) => enrollment.subjectId);
-        where.year = req.user.year;
-        where.AND = [{ status: { in: studentVisibleStatuses } }];
-        where.OR = [{ subjectId: null }, { subjectId: { in: subjectIds } }];
+        where.userId = mapping.facultyId;
+        where.status = { in: ['APPROVED', 'CHECKED_IN', 'CHECKED_OUT'] };
       }
     } else if (req.user.role === 'FACULTY') {
-      // `view=all` is an admin UI convenience, not a permission override.
-      where.OR = [{ userId: req.user.id }];
-      if (req.user.department) {
-        where.OR.push({ user: { department: req.user.department } });
-      }
+      where.userId = req.user.id;
     }
-    // ============================================================================
 
     if (status) {
       if (req.user.role === 'STUDENT') {
-        where.AND = [...(where.AND || []), { status }];
+        where.AND = [{ status }];
       } else {
         where.status = status;
       }
@@ -461,6 +506,7 @@ const getBookings = async (req, res) => {
 
     const formatted = bookings.map(b => ({
       ...b,
+      ...(req.user.role === 'STUDENT' ? { qrCodeData: null } : {}),
       requestedFacilities: JSON.parse(b.requestedFacilities || '[]')
     }));
 
@@ -490,21 +536,23 @@ const getBookingById = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Booking not found.' });
     }
 
-    const isOwner = booking.userId === req.user.id;
     const isAdmin = req.user.role === 'ADMIN';
-    const isFacultyOfSameDept = Boolean(
-      req.user.role === 'FACULTY' &&
-      req.user.department &&
-      booking.user.department &&
-      req.user.department === booking.user.department
-    );
-    // NEW: a student may view a booking if it was made for their own year
-    const isStudentOfSameYear = req.user.role === 'STUDENT' &&
-      req.user.year &&
-      req.user.year === booking.year &&
-      ['APPROVED', 'CHECKED_IN', 'CHECKED_OUT'].includes(booking.status);
+    let hasAccess = isAdmin;
+    if (req.user.role === 'FACULTY') {
+      hasAccess = booking.userId === req.user.id;
+    } else if (req.user.role === 'STUDENT') {
+      const mapping = await prisma.facultyStudentMap.findUnique({
+        where: { studentId: req.user.id },
+        select: { facultyId: true }
+      });
+      hasAccess = Boolean(
+        mapping &&
+        booking.userId === mapping.facultyId &&
+        ['APPROVED', 'CHECKED_IN', 'CHECKED_OUT'].includes(booking.status)
+      );
+    }
 
-    if (!isOwner && !isAdmin && !isFacultyOfSameDept && !isStudentOfSameYear) {
+    if (!hasAccess) {
       return res.status(403).json({ success: false, message: 'Access denied to view this booking.' });
     }
 
@@ -512,6 +560,7 @@ const getBookingById = async (req, res) => {
       success: true,
       booking: {
         ...booking,
+        ...(req.user.role === 'STUDENT' ? { qrCodeData: null } : {}),
         requestedFacilities: JSON.parse(booking.requestedFacilities || '[]')
       }
     });
@@ -526,7 +575,7 @@ const cancelBooking = async (req, res) => {
 
     const booking = await prisma.booking.findUnique({
       where: { id },
-      include: { resource: true }
+      include: { resource: true, user: true }
     });
 
     if (!booking) {
@@ -543,7 +592,10 @@ const cancelBooking = async (req, res) => {
     }
 
     const updated = await prisma.$transaction(async (tx) => {
-      const b = await tx.booking.update({ where: { id }, data: { status: 'CANCELLED' } });
+      const b = await tx.booking.update({
+        where: { id },
+        data: { status: 'CANCELLED', qrCodeData: null }
+      });
       await tx.notification.create({
         data: {
           userId: booking.userId,
@@ -554,6 +606,15 @@ const cancelBooking = async (req, res) => {
       });
       return b;
     });
+
+    if (booking.user.role === 'FACULTY' && ['APPROVED', 'CHECKED_IN'].includes(booking.status)) {
+      await notifyMappedStudent(
+        booking.userId,
+        'Class cancelled',
+        `${booking.user.name} has cancelled the class in ${booking.resource.name} on ${booking.date} ${booking.startTime}-${booking.endTime}.`,
+        'BOOKING_CANCELLED'
+      );
+    }
 
     // Trigger waitlist promotion for the freed slot
     promoteNext(booking.resourceId, booking.date, booking.startTime, booking.endTime);
@@ -580,6 +641,20 @@ const approveBooking = async (req, res) => {
 
     if (booking.status !== 'PENDING') {
       return res.status(400).json({ success: false, message: 'Only PENDING bookings can be approved.' });
+    }
+
+    const activeMaintenance = await prisma.maintenance.count({
+      where: { resourceId: booking.resourceId, status: { in: ['REPORTED', 'IN_PROGRESS'] } }
+    });
+    if (
+      ['MAINTENANCE', 'OUT_OF_SERVICE'].includes(booking.resource.status) ||
+      (booking.resource.maintenanceStatus && booking.resource.maintenanceStatus !== 'NONE') ||
+      activeMaintenance > 0
+    ) {
+      return res.status(409).json({
+        success: false,
+        message: 'Cannot approve. Resource is currently under maintenance.'
+      });
     }
 
     if (req.user.role === 'FACULTY') {
@@ -614,7 +689,8 @@ const approveBooking = async (req, res) => {
       where: {
         resourceId: booking.resourceId,
         date: booking.date,
-        status: { in: ['APPROVED', 'CHECKED_IN'] },
+        id: { not: id },
+        status: { in: ['APPROVED', 'CHECKED_IN', 'PENDING'] },
         AND: [
           { startTime: { lt: booking.endTime } },
           { endTime: { gt: booking.startTime } }
@@ -626,9 +702,19 @@ const approveBooking = async (req, res) => {
       return res.status(409).json({ success: false, message: 'Cannot approve. Resource is already booked for this time.' });
     }
 
+    const qrCodeData = JSON.stringify({
+      bookingCode: booking.bookingCode,
+      userId: booking.userId,
+      resourceId: booking.resourceId,
+      date: booking.date,
+      startTime: booking.startTime,
+      endTime: booking.endTime,
+      issuedAt: new Date().toISOString()
+    });
+
     const updated = await prisma.booking.update({
       where: { id },
-      data: { status: 'APPROVED' }
+      data: { status: 'APPROVED', qrCodeData }
     });
 
     await prisma.bookingApproval.create({
@@ -644,41 +730,17 @@ const approveBooking = async (req, res) => {
       data: {
         userId: booking.userId,
         title: `Resource assigned: ${booking.resource.name}`,
-        message: `Your booking for ${booking.resource.name} is scheduled on ${booking.date} (${booking.startTime} - ${booking.endTime}).`,
+        message: `Your booking is approved. Your QR pass is now available in Active QR Passes. Booking for ${booking.resource.name} is scheduled on ${booking.date} (${booking.startTime} - ${booking.endTime}).`,
         type: 'BOOKING_APPROVED'
       }
     });
 
-    if (booking.year) {
-      const recipients = booking.subjectId
-        ? await prisma.studentCourseEnrollment.findMany({
-          where: {
-            subjectId: booking.subjectId,
-            year: booking.year,
-            ...(booking.subject?.department ? { department: booking.subject.department } : {})
-          },
-          select: { studentId: true }
-        })
-        : await prisma.user.findMany({
-          where: {
-            role: 'STUDENT',
-            year: booking.year,
-            ...(booking.user.department ? { department: booking.user.department } : {})
-          },
-          select: { id: true }
-        });
-
-      for (const recipient of recipients) {
-        const studentId = recipient.studentId || recipient.id;
-        await prisma.notification.create({
-          data: {
-            userId: studentId,
-            title: `Class resource assigned: ${booking.resource.name}`,
-            message: `${booking.subject?.name ? `${booking.subject.name} is` : 'Your class is'} scheduled in ${booking.resource.name} on ${booking.date} (${booking.startTime} - ${booking.endTime}).`,
-            type: 'BOOKING_APPROVED'
-          }
-        });
-      }
+    if (booking.user.role === 'FACULTY') {
+      await notifyMappedStudent(
+        booking.userId,
+        'New class scheduled',
+        `${booking.user.name} has a class in ${booking.resource.name} on ${booking.date} ${booking.startTime}-${booking.endTime}.`
+      );
     }
 
     return res.json({ success: true, message: 'Booking approved successfully!', booking: updated });
@@ -742,7 +804,8 @@ const rejectBooking = async (req, res) => {
         where: { id },
         data: {
           status: 'REJECTED',
-          rejectionReason
+          rejectionReason,
+          qrCodeData: null
         }
       });
 
@@ -856,6 +919,19 @@ const rescheduleBooking = async (req, res) => {
       });
     }
 
+    const activeMaintenance = await prisma.maintenance.count({
+      where: { resourceId: booking.resourceId, status: { in: ['REPORTED', 'IN_PROGRESS'] } }
+    });
+    if (
+      (resource.maintenanceStatus && resource.maintenanceStatus !== 'NONE') ||
+      activeMaintenance > 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Resource is currently under maintenance and cannot be booked.'
+      });
+    }
+
     // Operating hours check
     if (startTime < resource.operatingHoursStart || endTime > resource.operatingHoursEnd) {
       return res.status(400).json({
@@ -903,15 +979,15 @@ const rescheduleBooking = async (req, res) => {
     // If rescheduled, non-admin bookings return to PENDING status for review
     const newStatus = req.user.role === 'ADMIN' ? 'APPROVED' : 'PENDING';
 
-    const qrData = JSON.stringify({
+    const qrData = newStatus === 'APPROVED' ? JSON.stringify({
       bookingCode: booking.bookingCode,
       userId: booking.userId,
       resourceId: booking.resourceId,
       date,
       startTime,
       endTime,
-      rescheduledAt: new Date().toISOString()
-    });
+      issuedAt: new Date().toISOString()
+    }) : null;
 
     const updatedBooking = await prisma.booking.update({
       where: { id },
@@ -939,6 +1015,15 @@ const rescheduleBooking = async (req, res) => {
         type: 'INFO'
       }
     });
+
+    if (booking.user.role === 'FACULTY' && booking.status === 'APPROVED') {
+      await notifyMappedStudent(
+        booking.userId,
+        'Class rescheduled',
+        `${booking.user.name} has rescheduled the class in ${resource.name} to ${date} ${startTime}-${endTime}. It is ${newStatus === 'PENDING' ? 'awaiting admin approval' : 'approved'}.`,
+        'INFO'
+      );
+    }
 
     // Audit log
     await prisma.auditLog.create({

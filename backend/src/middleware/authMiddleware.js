@@ -52,4 +52,34 @@ const authorize = (roles = []) => {
   };
 };
 
-module.exports = { authenticate, authorize };
+const authenticateOptional = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return next();
+    }
+
+    const decoded = jwt.verify(authHeader.split(' ')[1], JWT_SECRET);
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        department: true,
+        year: true,
+        section: true
+      }
+    });
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'Invalid token. User no longer exists.' });
+    }
+    req.user = user;
+    return next();
+  } catch (error) {
+    return res.status(401).json({ success: false, message: 'Invalid or expired token.', error: error.message });
+  }
+};
+
+module.exports = { authenticate, authenticateOptional, authorize };

@@ -1,14 +1,14 @@
 /**
  * seed-academic-data.js
  *
- * Loads the processed Kaggle-derived CSVs (students, teachers, subjects,
- * years, teacher_subject_year) into the database.
+ * Loads processed academic subjects and assignments while keeping demo users
+ * limited to the configured faculty and student team.
  *
  * This is SEPARATE from prisma/seed.js on purpose:
  *   - seed.js wipes and recreates your core demo data (admin/faculty/student
  *     accounts, resources, buildings, etc.) — we don't want to touch that.
- *   - This script is additive and idempotent. It upserts subjects, users, and
- *     assignments without deleting rows referenced by existing bookings.
+ *   - This script is additive and idempotent. It upserts subjects and maps
+ *     imported teaching assignments to the three configured faculty accounts.
  *
  * Run with:
  *   node prisma/seed-academic-data.js
@@ -22,7 +22,6 @@
  */
 
 const { PrismaClient } = require('@prisma/client');
-const bcrypt = require('bcryptjs');
 const fs = require('fs');
 const path = require('path');
 
@@ -50,7 +49,7 @@ function readCsv(filename) {
 }
 
 async function main() {
-  console.log('🌱 Seeding academic structure (students, teachers, subjects)...');
+  console.log('🌱 Seeding academic subjects and teaching assignments...');
 
   // -------------------------------------------------------------
   // 0. Load CSVs
@@ -82,57 +81,30 @@ async function main() {
   console.log(`✅ Created ${subjectsCsv.length} subjects.`);
 
   // -------------------------------------------------------------
-  // 2. Create Teachers as Users (role: FACULTY)
-  //    Default password for every imported teacher: Teacher@123
+  // 2. Map imported teacher IDs to the three configured faculty accounts.
   // -------------------------------------------------------------
-  const hashedTeacherPassword = await bcrypt.hash('Teacher@123', 10);
+  const facultyEmails = ['vineesha@campus.com', 'akash@campus.com', 'vikash@campus.com'];
+  const facultyAccounts = [];
+  for (const email of facultyEmails) {
+    const account = await prisma.user.findUnique({ where: { email } });
+    if (!account || account.role !== 'FACULTY') {
+      throw new Error(`Required demo faculty account is missing: ${email}`);
+    }
+    facultyAccounts.push(account);
+  }
+
   const teacherIdMap = {}; // teacher_id (csv) -> User.id (uuid)
 
-  for (const t of teachersCsv) {
-    const user = await prisma.user.upsert({
-      where: { email: t.email },
-      update: {},
-      create: {
-        name: t.name,
-        email: t.email,
-        password: hashedTeacherPassword,
-        role: 'FACULTY',
-        department: t.department,
-        phone: t.contact_number,
-      },
-    });
+  for (const [index, t] of teachersCsv.entries()) {
+    const user = facultyAccounts[index % facultyAccounts.length];
     teacherIdMap[t.teacher_id] = user.id;
   }
-  console.log(`✅ Created/updated ${teachersCsv.length} teachers (default password: Teacher@123).`);
+  console.log(`✅ Mapped ${teachersCsv.length} academic teacher records to the demo faculty accounts.`);
 
   // -------------------------------------------------------------
-  // 3. Create Students as Users (role: STUDENT)
-  //    Default password for every imported student: Student@123
+  // 3. Keep the student list limited to the three configured demo accounts.
   // -------------------------------------------------------------
-  const hashedStudentPassword = await bcrypt.hash('Student@123', 10);
-
-  for (const [index, s] of studentsCsv.entries()) {
-    const assignedYear = yearNameById[String((index % 4) + 1)];
-    await prisma.user.upsert({
-      where: { email: s.email },
-      update: {
-        name: s.name,
-        phone: s.contact_number,
-        year: assignedYear || yearNameById[s.year_id] || null,
-        section: s.section || null
-      },
-      create: {
-        name: s.name,
-        email: s.email,
-        password: hashedStudentPassword,
-        role: 'STUDENT',
-        phone: s.contact_number,
-        year: assignedYear || yearNameById[s.year_id] || null,
-        section: s.section || null,
-      },
-    });
-  }
-  console.log(`✅ Created/updated ${studentsCsv.length} students (default password: Student@123).`);
+  console.log(`✅ Retained the three configured demo student accounts; skipped ${studentsCsv.length} imported user records.`);
 
   // -------------------------------------------------------------
   // 4. Create TeacherSubjectYear assignments
@@ -162,6 +134,43 @@ async function main() {
     tsyCount++;
   }
   console.log(`✅ Created ${tsyCount} teacher-subject-year assignments.`);
+
+  const demoStudents = [
+    { email: 'monisha@campus.com', year: '1st Year', facultyEmail: 'vineesha@campus.com' },
+    { email: 'jushya@campus.com', year: '2nd Year', facultyEmail: 'akash@campus.com' },
+    { email: 'harishmitha@campus.com', year: '3rd Year', facultyEmail: 'vikash@campus.com' }
+  ];
+  for (const { email, year, facultyEmail } of demoStudents) {
+    const student = await prisma.user.findUnique({ where: { email } });
+    if (!student || student.role !== 'STUDENT') {
+      throw new Error(`Required demo student account is missing: ${email}`);
+    }
+    const mappedFaculty = facultyAccounts.find((faculty) => faculty.email === facultyEmail);
+
+    const courses = await prisma.teacherSubjectYear.findMany({
+      where: { teacherId: mappedFaculty.id, year },
+      select: { subjectId: true },
+      distinct: ['subjectId']
+    });
+    if (courses.length > 0) {
+      const department = student.department || 'Computer Science';
+      for (const { subjectId } of courses) {
+        await prisma.studentCourseEnrollment.upsert({
+          where: {
+            studentId_subjectId_department_year: {
+              studentId: student.id,
+              subjectId,
+              department,
+              year
+            }
+          },
+          update: {},
+          create: { studentId: student.id, subjectId, department, year }
+        });
+      }
+    }
+  }
+  console.log('✅ Mapped demo students to courses taught by faculty for their academic year.');
 
   // Create one pending class booking per imported teacher for admin review.
   // Deterministic booking codes keep this additive seed safe to rerun.
@@ -199,7 +208,7 @@ async function main() {
           bookingCode,
           userId,
           resourceId: sampleResource.id,
-          purpose: `${teacher.name} - ${year} ${subjectsCsv.find((subject) => subjectIdMap[subject.subject_id] === subjectId)?.subject_name || 'class'}`,
+          purpose: `${facultyAccounts[index % facultyAccounts.length].name} - ${year} ${subjectsCsv.find((subject) => subjectIdMap[subject.subject_id] === subjectId)?.subject_name || 'class'}`,
           eventType: 'ACADEMIC',
           attendeeCount: Math.min(30, sampleResource.capacity),
           requestedFacilities: '[]',

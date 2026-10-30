@@ -13,6 +13,7 @@ const { calculateBookingEnergyAndEcoScore } = require('./ecoService');
 async function getSmartRecommendations(params) {
   const {
     resourceType,
+    eventType,
     date,
     startTime,
     endTime,
@@ -23,31 +24,62 @@ async function getSmartRecommendations(params) {
 
   const headcount = Math.max(1, parseInt(attendeeCount, 10) || 1);
   const normalizedType = typeof resourceType === 'string' ? resourceType.trim() : '';
+  const normalizedEventType = typeof eventType === 'string' ? eventType.trim().toUpperCase() : '';
 
-  const buildCandidateQuery = (typeFilter) => {
-    const whereClause = {
-      status: { notIn: ['MAINTENANCE', 'OUT_OF_SERVICE'] },
-      capacity: { gte: headcount }
-    };
+  if (!date || !startTime || !endTime || startTime >= endTime) {
+    return [];
+  }
 
-    if (typeFilter) {
-      const normalized = typeFilter.trim();
-      whereClause.type = {
-        OR: [
-          { category: normalized },
-          { name: normalized }
-        ]
-      };
+  const normalizeTypeLabel = (value) => {
+    if (!value || typeof value !== 'string') return '';
+    return value.toLowerCase().replace(/[_\s-]+/g, ' ').trim();
+  };
+
+  const resolveRequestedType = () => {
+    if (normalizedType) {
+      return normalizedType;
     }
 
+    if (normalizedEventType === 'MEETING') {
+      return 'MEETING_ROOM';
+    }
+
+    return '';
+  };
+
+  const matchesRequestedType = (resource) => {
+    const requested = resolveRequestedType();
+    if (!requested) return true;
+
+    const category = resource?.type?.category || '';
+    const name = resource?.type?.name || resource?.name || '';
+    const requestedNormalized = normalizeTypeLabel(requested);
+    const categoryNormalized = normalizeTypeLabel(category);
+    const nameNormalized = normalizeTypeLabel(name);
+
+    return categoryNormalized === requestedNormalized || nameNormalized === requestedNormalized ||
+      categoryNormalized.includes(requestedNormalized) || nameNormalized.includes(requestedNormalized);
+  };
+
+  const buildCandidateQuery = () => {
     return prisma.resource.findMany({
-      where: whereClause,
+      where: {
+        status: 'AVAILABLE',
+        isArchived: false,
+        OR: [{ maintenanceStatus: null }, { maintenanceStatus: 'NONE' }],
+        capacity: { gte: headcount },
+        operatingHoursStart: { lte: startTime },
+        operatingHoursEnd: { gte: endTime }
+      },
       include: {
         type: true,
         building: true,
+        maintenances: {
+          where: { status: { in: ['REPORTED', 'IN_PROGRESS'] } }
+        },
         bookings: {
           where: {
-            ...(date ? { date } : { id: '__none__' }),
+            date,
             status: { in: ['APPROVED', 'CHECKED_IN', 'PENDING'] }
           }
         }
@@ -66,6 +98,13 @@ async function getSmartRecommendations(params) {
     const scoredCandidates = [];
 
     for (const res of candidateResources) {
+      if (
+        res.maintenances.length > 0 ||
+        (res.maintenanceStatus && res.maintenanceStatus !== 'NONE')
+      ) {
+        continue;
+      }
+
       const hasConflict = Boolean(startTime && endTime) && res.bookings.some((b) => {
         return (startTime < b.endTime && endTime > b.startTime);
       });
@@ -152,21 +191,13 @@ async function getSmartRecommendations(params) {
     return scoredCandidates;
   };
 
-  let candidateResources = [];
-  if (normalizedType) {
-    candidateResources = await buildCandidateQuery(normalizedType);
-  } else {
-    candidateResources = await buildCandidateQuery();
+  let candidateResources = await buildCandidateQuery();
+
+  if (resolveRequestedType()) {
+    candidateResources = candidateResources.filter((resource) => matchesRequestedType(resource));
   }
 
-  let scoredCandidates = await scoreCandidates(candidateResources);
-
-  if (normalizedType && scoredCandidates.length === 0) {
-    candidateResources = await buildCandidateQuery();
-    scoredCandidates = await scoreCandidates(candidateResources);
-  }
-
-  return scoredCandidates;
+  return scoreCandidates(candidateResources);
 }
 
 module.exports = { getSmartRecommendations };

@@ -8,7 +8,10 @@ const {
   getSystemSettings,
   updateSystemSetting,
   getStudentEnrollments,
-  assignStudentEnrollments
+  assignStudentEnrollments,
+  getFacultyStudentMap,
+  assignFacultyStudentMap,
+  deleteFacultyStudentMap
 } = require('../controllers/adminController');
 const { authenticate, authorize } = require('../middleware/authMiddleware');
 
@@ -22,6 +25,9 @@ router.post('/users', createUser);
 router.get('/subjects', getAllSubjects);
 router.get('/students/:id/enrollments', getStudentEnrollments);
 router.post('/students/:id/enrollments', assignStudentEnrollments);
+router.get('/faculty-student-map', getFacultyStudentMap);
+router.put('/faculty-student-map', assignFacultyStudentMap);
+router.delete('/faculty-student-map/:studentId', deleteFacultyStudentMap);
 router.patch('/users/:id/role', updateUserRole);
 router.get('/audit-logs', getAuditLogs);
 router.get('/settings', getSystemSettings);

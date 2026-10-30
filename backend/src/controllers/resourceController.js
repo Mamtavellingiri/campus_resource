@@ -81,15 +81,33 @@ const getAllResources = async (req, res) => {
 const getResourceById = async (req, res) => {
   try {
     const { id } = req.params;
+    const bookingWhere = { status: { in: ['APPROVED', 'CHECKED_IN'] } };
+    if (!req.user) {
+      bookingWhere.userId = '__none__';
+    } else if (req.user.role === 'STUDENT') {
+      const mapping = await prisma.facultyStudentMap.findUnique({
+        where: { studentId: req.user.id },
+        select: { facultyId: true }
+      });
+      bookingWhere.userId = mapping?.facultyId || '__none__';
+      bookingWhere.status = 'APPROVED';
+    } else if (req.user.role === 'FACULTY') {
+      bookingWhere.userId = req.user.id;
+    }
+
     const resource = await prisma.resource.findUnique({
       where: { id },
       include: {
         type: true,
         building: true,
         bookings: {
-          where: { status: { in: ['APPROVED', 'CHECKED_IN'] } },
+          where: bookingWhere,
           take: 10,
-          orderBy: { date: 'asc' }
+          orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
+          include: {
+            user: { select: { id: true, name: true } },
+            subject: true
+          }
         },
         maintenances: true,
         feedbacks: {
@@ -106,6 +124,9 @@ const getResourceById = async (req, res) => {
 
     const formatted = {
       ...resource,
+      bookings: req.user?.role === 'STUDENT'
+        ? resource.bookings.map((booking) => ({ ...booking, qrCodeData: null }))
+        : resource.bookings,
       facilities: JSON.parse(resource.facilities || '[]'),
       availableEquipment: JSON.parse(resource.availableEquipment || '[]'),
       images: JSON.parse(resource.images || '[]')
@@ -208,6 +229,10 @@ const createResource = async (req, res) => {
 const updateResource = async (req, res) => {
   try {
     const { id } = req.params;
+    const previousResource = await prisma.resource.findUnique({
+      where: { id },
+      include: { building: true }
+    });
     const {
       name,
       typeId,
@@ -265,6 +290,41 @@ const updateResource = async (req, res) => {
         details: `Updated resource ${updated.name}`
       }
     });
+
+    if (
+      previousResource &&
+      (
+        previousResource.roomNumber !== updated.roomNumber ||
+        previousResource.buildingId !== updated.buildingId ||
+        previousResource.floor !== updated.floor
+      )
+    ) {
+      const affectedBookings = await prisma.booking.findMany({
+        where: {
+          resourceId: id,
+          date: { gte: getNowInTz().date },
+          status: { in: ['APPROVED', 'CHECKED_IN'] },
+          user: { role: 'FACULTY' }
+        },
+        include: { user: { select: { id: true, name: true } } }
+      });
+      for (const booking of affectedBookings) {
+        const mappings = await prisma.facultyStudentMap.findMany({
+          where: { facultyId: booking.userId },
+          select: { studentId: true }
+        });
+        for (const mapping of mappings) {
+          await prisma.notification.create({
+            data: {
+              userId: mapping.studentId,
+              title: 'Class room changed',
+              message: `${booking.user.name}'s class in ${updated.name} on ${booking.date} (${booking.startTime}-${booking.endTime}) has moved to ${updated.building.name}, Room ${updated.roomNumber}, Floor ${updated.floor}.`,
+              type: 'INFO'
+            }
+          });
+        }
+      }
+    }
 
     return res.json({
       success: true,
@@ -326,6 +386,23 @@ const deleteResource = async (req, res) => {
             type: 'BOOKING_CANCELLED'
           }
         });
+
+        if (booking.status === 'APPROVED' && booking.user.role === 'FACULTY') {
+          const mappings = await tx.facultyStudentMap.findMany({
+            where: { facultyId: booking.userId },
+            select: { studentId: true }
+          });
+          for (const mapping of mappings) {
+            await tx.notification.create({
+              data: {
+                userId: mapping.studentId,
+                title: 'Class cancelled - Resource removed',
+                message: `${booking.user.name}'s class in ${resource.name} on ${booking.date} (${booking.startTime}-${booking.endTime}) was cancelled because the resource was removed.`,
+                type: 'BOOKING_CANCELLED'
+              }
+            });
+          }
+        }
       }
 
       await tx.auditLog.create({
@@ -393,6 +470,14 @@ const updateResourceStatus = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid resource status value.' });
     }
 
+    const previousResource = await prisma.resource.findUnique({
+      where: { id },
+      select: { status: true }
+    });
+    if (!previousResource) {
+      return res.status(404).json({ success: false, message: 'Resource not found.' });
+    }
+
     const updated = await prisma.resource.update({
       where: { id },
       data: {
@@ -400,6 +485,34 @@ const updateResourceStatus = async (req, res) => {
         maintenanceStatus: maintenanceStatus || (status === 'MAINTENANCE' ? 'UNDER_REPAIR' : 'NONE')
       }
     });
+
+    if (status === 'MAINTENANCE' && previousResource.status !== 'MAINTENANCE') {
+      const affectedBookings = await prisma.booking.findMany({
+        where: {
+          resourceId: id,
+          date: { gte: getNowInTz().date },
+          status: 'APPROVED',
+          user: { role: 'FACULTY' }
+        },
+        include: { user: { select: { id: true, name: true } } }
+      });
+      for (const booking of affectedBookings) {
+        const mappings = await prisma.facultyStudentMap.findMany({
+          where: { facultyId: booking.userId },
+          select: { studentId: true }
+        });
+        for (const mapping of mappings) {
+          await prisma.notification.create({
+            data: {
+              userId: mapping.studentId,
+              title: 'Class affected by room maintenance',
+              message: `${booking.user.name}'s class in ${updated.name} on ${booking.date} (${booking.startTime}-${booking.endTime}) may be affected by maintenance.`,
+              type: 'INFO'
+            }
+          });
+        }
+      }
+    }
 
     return res.json({ success: true, message: `Resource status changed to ${status}`, resource: updated });
   } catch (error) {

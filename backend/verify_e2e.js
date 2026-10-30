@@ -33,7 +33,7 @@ async function verifyAll() {
 
   const studentLogin = await request(`${API}/auth/login`, {
     method: 'POST',
-    body: JSON.stringify({ email: 'student@campus.com', password: 'Student@123' })
+    body: JSON.stringify({ email: 'monisha@campus.com', password: 'Student@123' })
   });
   console.log('✓ Student Login Success:', studentLogin.user.name, `(${studentLogin.user.role})`);
   const studentToken = studentLogin.token;

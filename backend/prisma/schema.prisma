@@ -29,6 +29,19 @@ model User {
   waitlistEntries WaitlistEntry[]
   teachingAssignments TeacherSubjectYear[] // used for FACULTY role
   courseEnrollments StudentCourseEnrollment[]
+  mappedStudents FacultyStudentMap[] @relation("FacultyMappedStudents")
+  mappedFaculty  FacultyStudentMap?  @relation("StudentMappedFaculty")
+}
+
+model FacultyStudentMap {
+  id        String   @id @default(uuid())
+  facultyId String
+  studentId String   @unique
+  createdAt DateTime @default(now())
+  faculty   User     @relation("FacultyMappedStudents", fields: [facultyId], references: [id], onDelete: Cascade)
+  student   User     @relation("StudentMappedFaculty", fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([facultyId])
 }
 
 model Building {

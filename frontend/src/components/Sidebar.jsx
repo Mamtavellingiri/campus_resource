@@ -24,6 +24,7 @@ export default function Sidebar() {
     { label: 'Resources', path: '/resources', icon: Search },
     { label: 'Calendar', path: '/calendar', icon: CalendarIcon },
     { label: 'Year Bookings', path: '/history', icon: QrCode },
+    { label: 'Active QR Passes', path: '/qr-passes', icon: QrCode },
     { label: 'Feedback', path: '/feedback', icon: MessageSquare }
   ];
 
@@ -32,7 +33,8 @@ export default function Sidebar() {
     { label: 'Class Booking', path: '/booking/smart', icon: Sparkles, badge: 'Smart' },
     { label: 'Resources', path: '/resources', icon: Search },
     { label: 'Calendar', path: '/calendar', icon: CalendarIcon },
-    { label: 'My Bookings & QR', path: '/history', icon: QrCode },
+    { label: 'My Bookings', path: '/history', icon: QrCode },
+    { label: 'Active QR Passes', path: '/qr-passes', icon: QrCode },
     { label: 'Feedback', path: '/feedback', icon: MessageSquare }
   ];
 

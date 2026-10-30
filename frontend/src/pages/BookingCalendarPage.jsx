@@ -5,9 +5,11 @@ import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import api from '../services/api';
 import QRModal from '../components/QRModal';
+import { useAuth } from '../context/AuthContext';
 import { Calendar as CalendarIcon, Filter, Layers, Clock, MapPin, QrCode } from 'lucide-react';
 
 export default function BookingCalendarPage() {
+  const { user } = useAuth();
   const [events, setEvents] = useState([]);
   const [buildings, setBuildings] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -24,6 +26,9 @@ export default function BookingCalendarPage() {
       const res = await api.get('/bookings?view=all');
       if (res.data.success) {
         let bList = res.data.bookings;
+        if (user?.role === 'STUDENT') {
+          bList = bList.filter((booking) => booking.status === 'APPROVED');
+        }
 
         if (selectedBuilding) {
           bList = bList.filter(b => b.resource?.buildingId === selectedBuilding);
@@ -79,11 +84,17 @@ export default function BookingCalendarPage() {
     };
     fetchMeta();
     fetchCalendarEvents();
-  }, [selectedBuilding, selectedCategory, selectedResource]);
+  }, [selectedBuilding, selectedCategory, selectedResource, user?.role]);
 
   const handleEventClick = (info) => {
-    if (info.event.extendedProps?.booking) {
-      setSelectedBooking(info.event.extendedProps.booking);
+    const booking = info.event.extendedProps?.booking;
+    if (
+      user?.role !== 'STUDENT' &&
+      booking &&
+      ['APPROVED', 'CHECKED_IN', 'CHECKED_OUT'].includes(booking.status) &&
+      booking.qrCodeData
+    ) {
+      setSelectedBooking(booking);
     }
   };
 
@@ -170,7 +181,9 @@ export default function BookingCalendarPage() {
       </div>
 
       {/* Booking Details Modal */}
-      {selectedBooking && (
+      {selectedBooking &&
+        ['APPROVED', 'CHECKED_IN', 'CHECKED_OUT'].includes(selectedBooking.status) &&
+        selectedBooking.qrCodeData && (
         <QRModal
           booking={selectedBooking}
           onClose={() => setSelectedBooking(null)}

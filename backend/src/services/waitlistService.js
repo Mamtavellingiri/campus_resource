@@ -25,11 +25,21 @@ async function promoteNext(resourceId, date, startTime, endTime) {
     });
 
     for (const entry of candidates) {
+      if (
+        ['MAINTENANCE', 'OUT_OF_SERVICE'].includes(entry.resource.status) ||
+        (entry.resource.maintenanceStatus && entry.resource.maintenanceStatus !== 'NONE')
+      ) continue;
+
       // Skip if slot start time has passed today
       if (entry.date === now.date) {
         const [sH, sM] = entry.startTime.split(':').map(Number);
         if (sH * 60 + sM <= now.minutes) continue;
       }
+
+      const activeMaintenance = await prisma.maintenance.count({
+        where: { resourceId: entry.resourceId, status: { in: ['REPORTED', 'IN_PROGRESS'] } }
+      });
+      if (activeMaintenance > 0) continue;
 
       // Check that the slot is actually free now
       const conflict = await prisma.booking.findFirst({
@@ -47,7 +57,7 @@ async function promoteNext(resourceId, date, startTime, endTime) {
       if (conflict) continue; // still blocked, try next candidate
 
       // Determine initial booking status
-      const autoApprove = ['ADMIN', 'FACULTY'].includes(entry.user.role);
+      const autoApprove = entry.user.role === 'ADMIN';
       const newStatus = autoApprove ? 'APPROVED' : 'PENDING';
 
       // Calculate eco metrics
@@ -66,11 +76,11 @@ async function promoteNext(resourceId, date, startTime, endTime) {
         }
         if (!bookingCode) throw new Error('Failed to generate booking code for waitlist promotion');
 
-        const qrData = JSON.stringify({
+        const qrData = newStatus === 'APPROVED' ? JSON.stringify({
           bookingCode, userId: entry.userId, resourceId: entry.resourceId,
           date: entry.date, startTime: entry.startTime, endTime: entry.endTime,
-          issuedAt: new Date().toISOString(), promotedFromWaitlist: true
-        });
+          issuedAt: new Date().toISOString()
+        }) : null;
 
         // Create the booking
         await tx.booking.create({
@@ -99,7 +109,9 @@ async function promoteNext(resourceId, date, startTime, endTime) {
           data: {
             userId: entry.userId,
             title: '🎉 Waitlist Slot Opened!',
-            message: `A slot opened up for ${entry.resource.name} on ${entry.date} (${entry.startTime}–${entry.endTime}). Your booking is now ${newStatus}.`,
+            message: newStatus === 'APPROVED'
+              ? `A slot opened up for ${entry.resource.name} on ${entry.date} (${entry.startTime}–${entry.endTime}). Your booking is approved and your QR pass is available in Active QR Passes.`
+              : `A slot opened up for ${entry.resource.name} on ${entry.date} (${entry.startTime}–${entry.endTime}). Your booking request is pending admin approval.`,
             type: 'BOOKING_CREATED'
           }
         });

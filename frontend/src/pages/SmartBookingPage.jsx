@@ -30,9 +30,9 @@ export default function SmartBookingPage() {
     return tomorrow.toISOString().split('T')[0];
   };
 
-  const [date, setDate] = useState(getDefaultDate);
-  const [startTime, setStartTime] = useState('10:00');
-  const [endTime, setEndTime] = useState('12:00');
+  const [date, setDate] = useState(searchParams.get('date') || getDefaultDate());
+  const [startTime, setStartTime] = useState(searchParams.get('startTime') || '10:00');
+  const [endTime, setEndTime] = useState(searchParams.get('endTime') || '12:00');
   const [attendeeCount, setAttendeeCount] = useState(30);
   const [purpose, setPurpose] = useState('');
   const [eventType, setEventType] = useState('ACADEMIC');
@@ -53,6 +53,8 @@ export default function SmartBookingPage() {
   const [assignments, setAssignments] = useState([]);
   const [selectedAssignmentId, setSelectedAssignmentId] = useState('');
   const [yearBookings, setYearBookings] = useState([]);
+  const [waitlistResourceId, setWaitlistResourceId] = useState('');
+  const [waitlistMessage, setWaitlistMessage] = useState('');
 
   const facilityOptions = [
     'Projector',
@@ -89,6 +91,12 @@ export default function SmartBookingPage() {
         }
         if (resourcesRes.data.success) {
           setResources(resourcesRes.data.resources);
+          setWaitlistResourceId((current) => current || resourcesRes.data.resources.find(
+            (resource) =>
+              resource.status === 'AVAILABLE' &&
+              (!resource.maintenanceStatus || resource.maintenanceStatus === 'NONE') &&
+              !resource.maintenances?.length
+          )?.id || '');
         }
         if (assignmentsRes?.data?.success) {
           setAssignments(assignmentsRes.data.assignments);
@@ -102,9 +110,23 @@ export default function SmartBookingPage() {
 
   useEffect(() => {
     if (!isStudent && categories.length > 0) {
-      handleGetRecommendations();
+      const timeoutId = setTimeout(() => {
+        handleGetRecommendations();
+      }, 300);
+      return () => clearTimeout(timeoutId);
     }
-  }, [categories.length, isStudent]);
+  }, [
+    categories.length,
+    isStudent,
+    date,
+    startTime,
+    endTime,
+    eventType,
+    resourceCategory,
+    attendeeCount,
+    buildingId,
+    requestedFacilities
+  ]);
 
   const selectedAssignment = assignments.find((assignment) => assignment.id === selectedAssignmentId);
 
@@ -123,8 +145,11 @@ export default function SmartBookingPage() {
     setConflictInfo(null);
     setErrorMsg(null);
     try {
+      const effectiveResourceType = resourceCategory || (eventType === 'MEETING' ? 'MEETING_ROOM' : undefined);
+
       const res = await api.post('/bookings/recommend', {
-        resourceType: resourceCategory || undefined,
+        resourceType: effectiveResourceType,
+        eventType,
         date,
         startTime,
         endTime,
@@ -184,7 +209,10 @@ export default function SmartBookingPage() {
       });
 
       if (!availRes.data.isAvailable) {
-        setConflictInfo(availRes.data.conflict || { startTime, endTime, purpose: 'Existing booking' });
+        setConflictInfo({
+          ...(availRes.data.conflict || { startTime, endTime, purpose: 'Existing booking' }),
+          message: availRes.data.message
+        });
         setLoading(false);
         return;
       }
@@ -210,10 +238,42 @@ export default function SmartBookingPage() {
       }
     } catch (err) {
       if (err.response && err.response.status === 409) {
-        setConflictInfo(err.response.data.conflict || { startTime, endTime, purpose: 'Double Booking Conflict' });
+        setConflictInfo({
+          ...(err.response.data.conflict || { startTime, endTime, purpose: 'Double Booking Conflict' }),
+          message: err.response.data.message
+        });
       } else {
         setErrorMsg(err.response?.data?.message || 'Failed to confirm booking.');
       }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleJoinWaitlist = async () => {
+    if (!waitlistResourceId) {
+      setWaitlistMessage('No bookable resources are available to join the waitlist for.');
+      return;
+    }
+    if (!purpose.trim()) {
+      setWaitlistMessage('Enter a booking purpose before joining the waitlist.');
+      return;
+    }
+
+    setLoading(true);
+    setWaitlistMessage('');
+    try {
+      const response = await api.post('/waitlist', {
+        resourceId: waitlistResourceId,
+        date,
+        startTime,
+        endTime,
+        attendeeCount: parseInt(attendeeCount, 10),
+        purpose
+      });
+      setWaitlistMessage(response.data.message);
+    } catch (err) {
+      setWaitlistMessage(err.response?.data?.message || 'Failed to join the waitlist.');
     } finally {
       setLoading(false);
     }
@@ -231,7 +291,7 @@ export default function SmartBookingPage() {
           Smart Resource Booking & Recommendation
         </h1>
         <p className="text-xs text-slate-400 mt-1">
-          Select requirements below. The AI algorithm will check availability in real time, guard against double-booking, and score eco suitability.
+          Enter the date and time provided by faculty. Recommendations will find resources usable during that exact slot and will not change your requested time.
         </p>
       </div>
 
@@ -265,7 +325,14 @@ export default function SmartBookingPage() {
           <div className="w-16 h-16 rounded-full bg-emerald-500/20 border border-emerald-500 text-emerald-400 flex items-center justify-center mx-auto">
             <CheckCircle2 className="w-8 h-8" />
           </div>
-          <h2 className="text-2xl font-extrabold text-slate-100">Booking Confirmed!</h2>
+          <h2 className="text-2xl font-extrabold text-slate-100">
+            {bookingSuccess.status === 'PENDING' ? 'Booking submitted' : 'Booking confirmed'}
+          </h2>
+          {bookingSuccess.status === 'PENDING' && (
+            <p className="text-xs text-slate-300">
+              Booking submitted. Waiting for admin approval. Your QR will appear in Active QR Passes once approved.
+            </p>
+          )}
           <p className="text-xs text-slate-400">
             Booking Code: <strong className="text-emerald-400 font-mono text-sm">{bookingSuccess.bookingCode}</strong>
           </p>
@@ -280,7 +347,7 @@ export default function SmartBookingPage() {
               onClick={() => navigate('/history')}
               className="flex-1 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-bold text-xs"
             >
-              View My Bookings & QR
+              View My Bookings
             </button>
             <button
               onClick={() => setBookingSuccess(null)}
@@ -324,6 +391,7 @@ export default function SmartBookingPage() {
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">Date</label>
                 <input
+                  id="booking-date"
                   type="date"
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
@@ -446,8 +514,35 @@ export default function SmartBookingPage() {
               <div className="glass-panel p-8 rounded-3xl border border-slate-800 text-center text-xs text-slate-400">
                 <Sparkles className="w-8 h-8 text-emerald-400 mx-auto mb-2 opacity-50" />
                 {recommendationAttempted
-                  ? `No resources match ${attendeeCount || 0} attendees with the selected date, time, category, and facilities. Try lowering the attendee count or changing your selections.`
+                  ? 'No resources available for this faculty-provided slot. Your requested date and time have not been changed.'
                   : 'Click "Run AI Smart Recommendation" to score and view candidate resources matching your date and capacity.'}
+                {recommendationAttempted && (
+                  <div className="mt-4 flex flex-col sm:flex-row justify-center items-center gap-2">
+                    <select
+                      value={waitlistResourceId}
+                      onChange={(event) => setWaitlistResourceId(event.target.value)}
+                      className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200"
+                    >
+                      <option value="">Select a resource for the waitlist</option>
+                      {resources.filter((resource) =>
+                        resource.status === 'AVAILABLE' &&
+                        (!resource.maintenanceStatus || resource.maintenanceStatus === 'NONE') &&
+                        !resource.maintenances?.length
+                      ).map((resource) => (
+                        <option key={resource.id} value={resource.id}>{resource.name}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={handleJoinWaitlist}
+                      disabled={loading}
+                      className="px-3 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-semibold disabled:opacity-50"
+                    >
+                      Join waitlist
+                    </button>
+                  </div>
+                )}
+                {waitlistMessage && <p className="mt-3 text-emerald-300">{waitlistMessage}</p>}
               </div>
             ) : (
               <div className="space-y-4">

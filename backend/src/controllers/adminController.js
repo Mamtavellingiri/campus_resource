@@ -10,6 +10,7 @@ const getAllUsers = async (req, res) => {
         email: true,
         role: true,
         department: true,
+        year: true,
         phone: true,
         createdAt: true,
         _count: { select: { bookings: true } }
@@ -303,6 +304,104 @@ const assignStudentEnrollments = async (req, res) => {
   }
 };
 
+const getFacultyStudentMap = async (req, res) => {
+  try {
+    const mappings = await prisma.facultyStudentMap.findMany({
+      include: {
+        faculty: { select: { id: true, name: true, email: true, department: true } },
+        student: { select: { id: true, name: true, email: true, department: true, year: true } }
+      },
+      orderBy: [{ faculty: { name: 'asc' } }, { student: { name: 'asc' } }]
+    });
+    return res.json({ success: true, mappings });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to fetch faculty-student mappings.', error: error.message });
+  }
+};
+
+const assignFacultyStudentMap = async (req, res) => {
+  try {
+    const { facultyId, studentId } = req.body;
+    if (!facultyId || !studentId) {
+      return res.status(400).json({ success: false, message: 'facultyId and studentId are required.' });
+    }
+
+    const [faculty, student] = await Promise.all([
+      prisma.user.findUnique({ where: { id: facultyId }, select: { id: true, name: true, role: true } }),
+      prisma.user.findUnique({ where: { id: studentId }, select: { id: true, name: true, role: true } })
+    ]);
+    if (!faculty || faculty.role !== 'FACULTY') {
+      return res.status(400).json({ success: false, message: 'Select a valid faculty account.' });
+    }
+    if (!student || student.role !== 'STUDENT') {
+      return res.status(400).json({ success: false, message: 'Select a valid student account.' });
+    }
+
+    const mapping = await prisma.$transaction(async (tx) => {
+      const previous = await tx.facultyStudentMap.findUnique({
+        where: { studentId },
+        include: { faculty: { select: { name: true } } }
+      });
+      const updated = await tx.facultyStudentMap.upsert({
+        where: { studentId },
+        update: { facultyId },
+        create: { facultyId, studentId },
+        include: {
+          faculty: { select: { id: true, name: true, email: true, department: true } },
+          student: { select: { id: true, name: true, email: true, department: true, year: true } }
+        }
+      });
+      await tx.auditLog.create({
+        data: {
+          userId: req.user.id,
+          action: previous ? 'REASSIGN_FACULTY_STUDENT' : 'ASSIGN_FACULTY_STUDENT',
+          entity: 'FACULTY_STUDENT_MAP',
+          entityId: updated.id,
+          details: `${student.name} mapped to ${faculty.name}${previous ? ` (previously ${previous.faculty.name})` : ''}.`
+        }
+      });
+      return updated;
+    });
+
+    return res.json({ success: true, message: 'Faculty-student mapping saved.', mapping });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to save faculty-student mapping.', error: error.message });
+  }
+};
+
+const deleteFacultyStudentMap = async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    const mapping = await prisma.facultyStudentMap.findUnique({
+      where: { studentId },
+      include: {
+        faculty: { select: { name: true } },
+        student: { select: { name: true } }
+      }
+    });
+    if (!mapping) {
+      return res.status(404).json({ success: false, message: 'Faculty-student mapping not found.' });
+    }
+
+    await prisma.$transaction([
+      prisma.facultyStudentMap.delete({ where: { studentId } }),
+      prisma.auditLog.create({
+        data: {
+          userId: req.user.id,
+          action: 'REMOVE_FACULTY_STUDENT',
+          entity: 'FACULTY_STUDENT_MAP',
+          entityId: mapping.id,
+          details: `Removed ${mapping.student.name} from ${mapping.faculty.name}.`
+        }
+      })
+    ]);
+
+    return res.json({ success: true, message: 'Faculty-student mapping removed.' });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to remove faculty-student mapping.', error: error.message });
+  }
+};
+
 const getSystemSettings = async (req, res) => {
   try {
     const settings = await prisma.systemSetting.findMany();
@@ -347,6 +446,9 @@ module.exports = {
   getAllSubjects,
   getStudentEnrollments,
   assignStudentEnrollments,
+  getFacultyStudentMap,
+  assignFacultyStudentMap,
+  deleteFacultyStudentMap,
   updateUserRole,
   getAuditLogs,
   getSystemSettings,

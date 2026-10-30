@@ -10,12 +10,7 @@ export default function QRModal({ booking, onClose, onRefresh }) {
 
   if (!booking) return null;
 
-  const qrValue = booking.qrCodeData || JSON.stringify({
-    bookingCode: booking.bookingCode,
-    userId: booking.userId,
-    resourceId: booking.resourceId,
-    date: booking.date
-  });
+  const qrValue = booking.qrCodeData;
 
   const handleSimulateCheckIn = async () => {
     setLoading(true);
@@ -80,12 +75,18 @@ export default function QRModal({ booking, onClose, onRefresh }) {
         </div>
 
         {/* QR Display Card */}
-        <div className="bg-white p-5 rounded-2xl flex flex-col items-center justify-center shadow-xl border-4 border-emerald-500/30 mb-6">
-          <QRCodeSVG value={qrValue} size={180} level="H" includeMargin={true} />
-          <span className="text-[10px] text-slate-500 font-mono tracking-widest uppercase mt-2">
-            Scan for Access & Check-In
-          </span>
-        </div>
+        {qrValue ? (
+          <div className="bg-white p-5 rounded-2xl flex flex-col items-center justify-center shadow-xl border-4 border-emerald-500/30 mb-6">
+            <QRCodeSVG value={qrValue} size={180} level="H" includeMargin={true} />
+            <span className="text-[10px] text-slate-500 font-mono tracking-widest uppercase mt-2">
+              Scan for Access & Check-In
+            </span>
+          </div>
+        ) : (
+          <div className="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-center text-sm mb-6">
+            QR will be available after admin approval.
+          </div>
+        )}
 
         {/* Booking Details Summary */}
         <div className="bg-slate-900/90 rounded-2xl p-4 border border-slate-800 space-y-2 mb-6 text-xs">
@@ -137,7 +138,7 @@ export default function QRModal({ booking, onClose, onRefresh }) {
 
         {/* Interactive Action Buttons */}
         <div className="space-y-2">
-          {booking.status === 'APPROVED' && (
+          {qrValue && booking.status === 'APPROVED' && (
             <button
               onClick={handleSimulateCheckIn}
               disabled={loading}
@@ -148,7 +149,7 @@ export default function QRModal({ booking, onClose, onRefresh }) {
             </button>
           )}
 
-          {booking.status === 'CHECKED_IN' && (
+          {qrValue && booking.status === 'CHECKED_IN' && (
             <button
               onClick={handleSimulateCheckOut}
               disabled={loading}

@@ -93,6 +93,23 @@ const createMaintenanceTicket = async (req, res) => {
             type: 'BOOKING_CANCELLED'
           }
         });
+
+        if (booking.status === 'APPROVED' && booking.user.role === 'FACULTY') {
+          const mappings = await tx.facultyStudentMap.findMany({
+            where: { facultyId: booking.userId },
+            select: { studentId: true }
+          });
+          for (const mapping of mappings) {
+            await tx.notification.create({
+              data: {
+                userId: mapping.studentId,
+                title: 'Class cancelled - Room maintenance',
+                message: `${ticket.resource.name} on ${booking.date} (${booking.startTime}-${booking.endTime}) is affected by maintenance: ${issue}.`,
+                type: 'BOOKING_CANCELLED'
+              }
+            });
+          }
+        }
       }
 
       await tx.auditLog.create({

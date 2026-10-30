@@ -10,6 +10,11 @@ import {
   QrCode
 } from 'lucide-react';
 
+const getToday = () => {
+  const today = new Date();
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+};
+
 export default function FacultyDashboard() {
   const { user } = useAuth();
   const [bookings, setBookings] = useState([]);
@@ -23,7 +28,11 @@ export default function FacultyDashboard() {
       const res = await api.get('/bookings');
       if (res.data.success) {
         const bList = res.data.bookings;
-        setBookings(bList.filter(b => b.userId === user.id));
+        const ownBookings = bList.filter((booking) => booking.userId === user.id);
+        setBookings(ownBookings);
+        setSelectedQRBooking((current) => current
+          ? ownBookings.find((booking) => booking.id === current.id) || null
+          : null);
       }
     } catch (err) {
       console.error(err);
@@ -54,13 +63,25 @@ export default function FacultyDashboard() {
         </div>
 
         <div className="flex items-center gap-3">
-          <Link
-            to="/booking/smart?eventType=ACADEMIC&recurring=true"
-            className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-bold text-xs hover:from-amber-400 hover:to-orange-400 transition-all shadow-lg flex items-center gap-2"
-          >
-            <Sparkles className="w-4 h-4" />
-            Book Class / Recurring Lecture
-          </Link>
+          <div className="flex flex-wrap items-center gap-3">
+            <Link
+              to="/qr-passes"
+              className="px-3 py-2 rounded-xl bg-slate-900 border border-emerald-500/30 text-emerald-300 text-xs font-semibold"
+            >
+              Active QR Passes ({bookings.filter((booking) =>
+                ['APPROVED', 'CHECKED_IN'].includes(booking.status) &&
+                booking.date >= getToday() &&
+                booking.qrCodeData
+              ).length})
+            </Link>
+            <Link
+              to="/booking/smart?eventType=ACADEMIC&recurring=true"
+              className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-bold text-xs hover:from-amber-400 hover:to-orange-400 transition-all shadow-lg flex items-center gap-2"
+            >
+              <Sparkles className="w-4 h-4" />
+              Book Class / Recurring Lecture
+            </Link>
+          </div>
         </div>
       </div>
 
@@ -87,11 +108,13 @@ export default function FacultyDashboard() {
               <div className="flex items-center gap-3">
                 <EcoBadge score={b.ecoScoreCalculated} />
                 <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                  b.status === 'APPROVED' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-300'
+                  b.status === 'APPROVED' ? 'bg-emerald-500/20 text-emerald-400' :
+                  b.status === 'PENDING' ? 'bg-amber-500/20 text-amber-300' :
+                  'bg-slate-800 text-slate-300'
                 }`}>
-                  {b.status}
+                  {b.status === 'PENDING' ? 'Awaiting admin approval' : b.status}
                 </span>
-                {['APPROVED', 'CHECKED_IN'].includes(b.status) && (
+                {['APPROVED', 'CHECKED_IN'].includes(b.status) && b.qrCodeData && (
                   <button
                     onClick={() => setSelectedQRBooking(b)}
                     className="p-1.5 rounded-lg bg-slate-900 text-emerald-400 border border-slate-800"
@@ -107,7 +130,9 @@ export default function FacultyDashboard() {
         )}
       </div>
 
-      {selectedQRBooking && (
+      {selectedQRBooking &&
+        ['APPROVED', 'CHECKED_IN', 'CHECKED_OUT'].includes(selectedQRBooking.status) &&
+        selectedQRBooking.qrCodeData && (
         <QRModal
           booking={selectedQRBooking}
           onClose={() => setSelectedQRBooking(null)}

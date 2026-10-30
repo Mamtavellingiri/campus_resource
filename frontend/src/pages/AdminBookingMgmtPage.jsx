@@ -161,7 +161,7 @@ export default function AdminBookingMgmtPage() {
                       </>
                     )}
 
-                    {(b.status === 'APPROVED' || b.status === 'CHECKED_IN') && (
+                    {['APPROVED', 'CHECKED_IN'].includes(b.status) && b.qrCodeData && (
                       <button
                         onClick={() => setSelectedQRBooking(b)}
                         className="p-1.5 rounded-lg bg-slate-900 text-emerald-400 border border-slate-800"
@@ -178,7 +178,9 @@ export default function AdminBookingMgmtPage() {
         </div>
       </div>
 
-      {selectedQRBooking && (
+      {selectedQRBooking &&
+        ['APPROVED', 'CHECKED_IN', 'CHECKED_OUT'].includes(selectedQRBooking.status) &&
+        selectedQRBooking.qrCodeData && (
         <QRModal
           booking={selectedQRBooking}
           onClose={() => setSelectedQRBooking(null)}

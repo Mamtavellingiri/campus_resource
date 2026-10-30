@@ -23,19 +23,37 @@ export default function StudentDashboard() {
   const [recommendations, setRecommendations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeBooking, setActiveBooking] = useState(null);
+  const [mappedFaculty, setMappedFaculty] = useState(user?.mappedFaculty || null);
 
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
-      // 1. Fetch user bookings
-      const bRes = await api.get('/bookings');
+      const [bRes, meRes] = await Promise.all([
+        api.get('/bookings'),
+        api.get('/auth/me')
+      ]);
+      if (meRes.data.success) {
+        setMappedFaculty(meRes.data.user.mappedFaculty || null);
+      }
+
       if (bRes.data.success) {
         const bList = bRes.data.bookings;
         setBookings(bList);
 
-        // Find active checked-in or upcoming approved booking
-        const current = bList.find(b => b.status === 'CHECKED_IN' || b.status === 'APPROVED');
-        setActiveBooking(current || null);
+        const now = new Date();
+        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const timeNow = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        const scheduled = bList
+          .filter((booking) => ['APPROVED', 'CHECKED_IN'].includes(booking.status))
+          .sort((a, b) => `${a.date} ${a.startTime}`.localeCompare(`${b.date} ${b.startTime}`));
+        const current = scheduled.find((booking) =>
+          booking.date === todayStr &&
+          (booking.status === 'CHECKED_IN' || (booking.startTime <= timeNow && booking.endTime > timeNow))
+        );
+        const next = scheduled.find((booking) =>
+          booking.date > todayStr || (booking.date === todayStr && booking.startTime >= timeNow)
+        );
+        setActiveBooking(current || next || null);
       }
 
       // 2. Fetch AI Recommendations for student
@@ -64,6 +82,22 @@ export default function StudentDashboard() {
   const pendingBookings = bookings.filter(b => b.status === 'PENDING').length;
   const noShows = bookings.filter(b => b.status === 'NO_SHOW').length;
   const checkedOutCount = bookings.filter(b => b.status === 'CHECKED_OUT').length;
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const weekEnd = new Date(now);
+  weekEnd.setDate(weekEnd.getDate() + 7);
+  const weekEndStr = `${weekEnd.getFullYear()}-${String(weekEnd.getMonth() + 1).padStart(2, '0')}-${String(weekEnd.getDate()).padStart(2, '0')}`;
+  const todayBookings = bookings
+    .filter((booking) => booking.date === todayStr && ['APPROVED', 'CHECKED_IN', 'CHECKED_OUT'].includes(booking.status))
+    .sort((a, b) => a.startTime.localeCompare(b.startTime));
+  const upcomingBookings = bookings
+    .filter((booking) =>
+      booking.date >= todayStr &&
+      booking.date <= weekEndStr &&
+      ['APPROVED', 'CHECKED_IN'].includes(booking.status)
+    )
+    .sort((a, b) => `${a.date} ${a.startTime}`.localeCompare(`${b.date} ${b.startTime}`))
+    .slice(0, 7);
 
   return (
     <div className="space-y-6">
@@ -78,8 +112,19 @@ export default function StudentDashboard() {
             Welcome back, {user?.name || 'Student'} 👋
           </h1>
           <p className="text-xs text-slate-400 mt-1">
-            Department of {user?.department || 'Computer Science'} • {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+            Department of {user?.department || 'Computer Science'} · {user?.year || 'Year not assigned'} · {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
           </p>
+        </div>
+
+        <div className="glass-panel p-5 rounded-2xl border border-slate-800">
+          <div className="text-[10px] uppercase tracking-wider font-bold text-emerald-400 mb-1">My Faculty</div>
+          {mappedFaculty ? (
+            <div className="text-sm font-bold text-slate-100">
+              {mappedFaculty.name}<span className="text-xs font-normal text-slate-400"> · {mappedFaculty.department || 'Department not assigned'}</span>
+            </div>
+          ) : (
+            <p className="text-xs text-slate-400">No faculty assigned to you yet. Please contact admin.</p>
+          )}
         </div>
 
         <Link
@@ -126,19 +171,20 @@ export default function StudentDashboard() {
             <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                  {activeBooking.status === 'CHECKED_IN' ? 'LIVE SESSION ACTIVE' : 'UPCOMING APPROVED BOOKING'}
+                  {activeBooking.status === 'CHECKED_IN' ? 'LIVE SESSION ACTIVE' : activeBooking.startTime <= `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}` && activeBooking.endTime > `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}` && activeBooking.date === todayStr ? 'CURRENT CLASS' : 'NEXT CLASS'}
                 </span>
                 <EcoBadge score={activeBooking.ecoScoreCalculated} />
               </div>
 
               <h3 className="text-xl font-extrabold text-slate-100">
-                {activeBooking.resource?.name}
+                {activeBooking.subject?.name || activeBooking.resource?.name}
               </h3>
+              <p className="text-xs text-slate-300">Faculty: {activeBooking.user?.name || mappedFaculty?.name}</p>
 
               <div className="flex flex-wrap items-center gap-4 text-xs text-slate-300">
                 <span className="flex items-center gap-1">
                   <MapPin className="w-4 h-4 text-emerald-400" />
-                  {activeBooking.resource?.building?.name} (Room {activeBooking.resource?.roomNumber})
+                  Room {activeBooking.resource?.roomNumber}, {activeBooking.resource?.building?.name}, Floor {activeBooking.resource?.floor}
                 </span>
                 <span className="flex items-center gap-1">
                   <Clock className="w-4 h-4 text-emerald-400" />
@@ -158,7 +204,7 @@ export default function StudentDashboard() {
           <Clock className="w-8 h-8 text-slate-500 mx-auto mb-2" />
           <h4 className="text-sm font-semibold text-slate-200">No Active Class Booking Right Now</h4>
           <p className="text-xs text-slate-400 max-w-sm mx-auto mt-1 mb-4">
-            Faculty-scheduled sessions for your year will appear here.
+            Approved classes from your mapped faculty will appear here.
           </p>
           <Link
             to="/history"
@@ -212,21 +258,74 @@ export default function StudentDashboard() {
         </div>
       </div>
 
-      {/* UPCOMING & RECENT BOOKINGS LIST */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+        <section className="glass-panel p-6 rounded-3xl border border-slate-800">
+          <h3 className="font-bold text-sm text-slate-100 mb-4">Today&apos;s Timetable</h3>
+          {todayBookings.length ? (
+            <div className="divide-y divide-slate-800/80">
+              {todayBookings.map((booking) => (
+                <div key={booking.id} className="py-3 flex items-start justify-between gap-4 text-xs">
+                  <div>
+                    <div className="font-semibold text-slate-200">{booking.startTime}-{booking.endTime} · {booking.subject?.name || booking.purpose}</div>
+                    <div className="text-slate-400 mt-1">{booking.resource?.name} · Room {booking.resource?.roomNumber}, {booking.resource?.building?.name}, Floor {booking.resource?.floor}</div>
+                    <div className="text-slate-500 mt-1">Faculty: {booking.user?.name || mappedFaculty?.name}</div>
+                  </div>
+                  <span className="text-emerald-400 font-semibold">{booking.status}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-400">No classes scheduled for today.</p>
+          )}
+        </section>
+
+        <section className="glass-panel p-6 rounded-3xl border border-slate-800">
+          <h3 className="font-bold text-sm text-slate-100 mb-4">Upcoming Classes This Week</h3>
+          {upcomingBookings.length ? (
+            <div className="divide-y divide-slate-800/80">
+              {upcomingBookings.map((booking) => (
+                <div key={booking.id} className="py-3 flex items-start justify-between gap-4 text-xs">
+                  <div>
+                    <div className="font-semibold text-slate-200">{booking.date} · {booking.startTime}-{booking.endTime} · {booking.subject?.name || booking.purpose}</div>
+                    <div className="text-slate-400 mt-1">{booking.resource?.name} · Room {booking.resource?.roomNumber}, {booking.resource?.building?.name}, Floor {booking.resource?.floor}</div>
+                    <div className="text-slate-500 mt-1">Faculty: {booking.user?.name || mappedFaculty?.name}</div>
+                  </div>
+                  <span className="text-emerald-400 font-semibold">{booking.status}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-400">No upcoming approved classes this week.</p>
+          )}
+        </section>
+      </div>
+
+      <nav className="glass-panel p-5 rounded-2xl border border-slate-800 flex flex-wrap gap-3" aria-label="Student quick links">
+        <Link to="/resources" className="px-4 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs font-semibold text-emerald-400">Resources</Link>
+        <Link to="/calendar" className="px-4 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs font-semibold text-emerald-400">Calendar</Link>
+        <Link to="/feedback" className="px-4 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs font-semibold text-emerald-400">Feedback</Link>
+      </nav>
+
+      {/* UPCOMING APPROVED BOOKINGS */}
       <div className="glass-panel p-6 rounded-3xl border border-slate-800">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="font-bold text-sm text-slate-100">My Year&apos;s Booking Schedule</h3>
+          <h3 className="font-bold text-sm text-slate-100">My Faculty&apos;s Approved Schedule</h3>
           <Link to="/history" className="text-xs text-slate-400 hover:text-white">View All →</Link>
         </div>
 
         <div className="divide-y divide-slate-800/80">
-          {bookings.slice(0, 5).map((b) => (
+          {upcomingBookings.slice(0, 5).map((b) => (
             <div key={b.id} className="py-3 flex items-center justify-between gap-4 text-xs">
               <div>
                 <div className="font-semibold text-slate-200">{b.resource?.name}</div>
                 <div className="text-slate-400 text-[11px]">
                   {b.date} ({b.startTime} - {b.endTime}) • {b.purpose}
                 </div>
+                {b.subject?.name && (
+                  <div className="text-slate-500 text-[10px] mt-1">
+                    {b.subject.name} · Faculty: {b.user?.name || 'Not specified'}
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center gap-3">

@@ -103,9 +103,30 @@ const login = async (req, res) => {
 
 const getMe = async (req, res) => {
   try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        department: true,
+        year: true,
+        section: true,
+        mappedFaculty: {
+          select: {
+            faculty: { select: { id: true, name: true, department: true } }
+          }
+        }
+      }
+    });
+
     return res.json({
       success: true,
-      user: req.user
+      user: {
+        ...user,
+        mappedFaculty: user?.mappedFaculty?.faculty || null
+      }
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: 'Server error fetching user profile.', error: error.message });

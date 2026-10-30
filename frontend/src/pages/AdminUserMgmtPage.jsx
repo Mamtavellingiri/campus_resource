@@ -1,11 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import api from '../services/api';
-import { Users, UserPlus, GraduationCap, Briefcase, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Users, UserPlus, GraduationCap, Briefcase, CheckCircle2, AlertCircle, Trash2, ArrowRightLeft } from 'lucide-react';
 
 const years = ['1st Year', '2nd Year', '3rd Year', '4th Year'];
 
 export default function AdminUserMgmtPage() {
   const [subjects, setSubjects] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [mappings, setMappings] = useState([]);
+  const [mappingForm, setMappingForm] = useState({ facultyId: '', studentId: '' });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
@@ -24,17 +27,63 @@ export default function AdminUserMgmtPage() {
   });
 
   useEffect(() => {
-    const fetchSubjects = async () => {
+    const fetchAdminData = async () => {
       try {
-        const res = await api.get('/admin/subjects');
-        if (res.data.success) setSubjects(res.data.subjects || []);
+        const [subjectsRes, usersRes, mappingsRes] = await Promise.all([
+          api.get('/admin/subjects'),
+          api.get('/admin/users'),
+          api.get('/admin/faculty-student-map')
+        ]);
+        if (subjectsRes.data.success) setSubjects(subjectsRes.data.subjects || []);
+        if (usersRes.data.success) setUsers(usersRes.data.users || []);
+        if (mappingsRes.data.success) setMappings(mappingsRes.data.mappings || []);
       } catch (err) {
-        setError(err.response?.data?.message || 'Failed to load subjects.');
+        setError(err.response?.data?.message || 'Failed to load admin data.');
       }
     };
 
-    fetchSubjects();
+    fetchAdminData();
   }, []);
+
+  const refreshMappings = async () => {
+    const [usersRes, mappingsRes] = await Promise.all([
+      api.get('/admin/users'),
+      api.get('/admin/faculty-student-map')
+    ]);
+    setUsers(usersRes.data.users || []);
+    setMappings(mappingsRes.data.mappings || []);
+  };
+
+  const handleMappingSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await api.put('/admin/faculty-student-map', mappingForm);
+      setMessage('Faculty-student mapping saved.');
+      await refreshMappings();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to save faculty-student mapping.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRemoveMapping = async (studentId) => {
+    setLoading(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await api.delete(`/admin/faculty-student-map/${studentId}`);
+      setMessage('Faculty-student mapping removed.');
+      await refreshMappings();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to remove faculty-student mapping.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleChange = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -125,6 +174,87 @@ export default function AdminUserMgmtPage() {
           <span>{message}</span>
         </div>
       )}
+
+      <section className="glass-panel p-6 rounded-3xl border border-slate-800 space-y-5">
+        <div>
+          <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
+            <ArrowRightLeft className="w-5 h-5 text-emerald-400" />
+            Faculty ↔ Student Mapping
+          </h2>
+          <p className="text-xs text-slate-400 mt-1">Each student is assigned to one faculty member and sees only that faculty member&apos;s approved classes.</p>
+        </div>
+
+        <form onSubmit={handleMappingSubmit} className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-3 items-end">
+          <label className="block text-xs font-semibold text-slate-300">
+            Faculty
+            <select
+              required
+              value={mappingForm.facultyId}
+              onChange={(e) => setMappingForm((prev) => ({ ...prev, facultyId: e.target.value }))}
+              className="mt-1 w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200"
+            >
+              <option value="">Select faculty</option>
+              {users.filter((item) => item.role === 'FACULTY').map((faculty) => (
+                <option key={faculty.id} value={faculty.id}>{faculty.name} · {faculty.department || 'No department'}</option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-xs font-semibold text-slate-300">
+            Student
+            <select
+              required
+              value={mappingForm.studentId}
+              onChange={(e) => setMappingForm((prev) => ({ ...prev, studentId: e.target.value }))}
+              className="mt-1 w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200"
+            >
+              <option value="">Select student</option>
+              {users.filter((item) => item.role === 'STUDENT').map((student) => (
+                <option key={student.id} value={student.id}>{student.name} · {student.year || 'Year not set'}</option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="submit"
+            disabled={loading}
+            className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-bold text-xs disabled:opacity-50"
+          >
+            {loading ? 'Saving...' : 'Assign'}
+          </button>
+        </form>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="text-slate-400 border-b border-slate-800">
+              <tr>
+                <th className="py-3 pr-4 font-semibold">Faculty</th>
+                <th className="py-3 pr-4 font-semibold">Student</th>
+                <th className="py-3 text-right font-semibold">Remove</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/80">
+              {mappings.map((mapping) => (
+                <tr key={mapping.id}>
+                  <td className="py-3 pr-4 text-slate-200">{mapping.faculty.name} <span className="text-slate-500">· {mapping.faculty.department}</span></td>
+                  <td className="py-3 pr-4 text-slate-200">{mapping.student.name} <span className="text-slate-500">· {mapping.student.year}</span></td>
+                  <td className="py-3 text-right">
+                    <button
+                      type="button"
+                      disabled={loading}
+                      onClick={() => handleRemoveMapping(mapping.studentId)}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-rose-500/30 text-rose-400 hover:bg-rose-500/10 disabled:opacity-50"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> Remove
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {mappings.length === 0 && (
+                <tr><td colSpan="3" className="py-5 text-center text-slate-500">No faculty-student mappings yet.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <form onSubmit={handleSubmit} className="glass-panel p-6 rounded-3xl border border-slate-800 space-y-5">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

@@ -16,6 +16,17 @@ export default function ResourceCatalogPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [capacityFilter, setCapacityFilter] = useState('');
   const [loading, setLoading] = useState(true);
+  const [slotDate, setSlotDate] = useState(() => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+  });
+  const [slotStartTime, setSlotStartTime] = useState('10:00');
+  const [slotEndTime, setSlotEndTime] = useState('12:00');
+  const [slotAvailability, setSlotAvailability] = useState({});
+  const [slotChecked, setSlotChecked] = useState(false);
+  const [checkingSlot, setCheckingSlot] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState('');
 
   const fetchResources = async () => {
     setLoading(true);
@@ -30,6 +41,7 @@ export default function ResourceCatalogPage() {
       const res = await api.get(`/resources?${queryParams.toString()}`);
       if (res.data.success) {
         setResources(res.data.resources);
+        setSlotChecked(false);
       }
     } catch (err) {
       console.error(err);
@@ -52,6 +64,43 @@ export default function ResourceCatalogPage() {
     fetchResources();
   }, [search, selectedBuilding, selectedCategory, statusFilter, capacityFilter]);
 
+  const checkSelectedSlot = async () => {
+    if (!slotDate || !slotStartTime || !slotEndTime || slotStartTime >= slotEndTime) {
+      setAvailabilityError('Choose a date and a valid start and end time.');
+      return;
+    }
+
+    setCheckingSlot(true);
+    setAvailabilityError('');
+    try {
+      const results = await Promise.all(resources.map(async (resource) => {
+        try {
+          const response = await api.post('/bookings/check-availability', {
+            resourceId: resource.id,
+            date: slotDate,
+            startTime: slotStartTime,
+            endTime: slotEndTime
+          });
+          return [resource.id, response.data.isAvailable];
+        } catch (error) {
+          if ([400, 409].includes(error.response?.status)) {
+            return [resource.id, false];
+          }
+          throw error;
+        }
+      }));
+      setSlotAvailability(Object.fromEntries(results));
+      setSlotChecked(true);
+    } catch (error) {
+      setAvailabilityError(error.response?.data?.message || 'Failed to check resource availability.');
+    } finally {
+      setCheckingSlot(false);
+    }
+  };
+
+  const allResourcesUnavailable = slotChecked && resources.length > 0 &&
+    resources.every((resource) => slotAvailability[resource.id] === false);
+
   return (
     <div className="space-y-6">
       
@@ -71,6 +120,66 @@ export default function ResourceCatalogPage() {
           Showing {resources.length} Resources
         </div>
       </div>
+
+      <div className="glass-panel p-4 rounded-2xl border border-slate-800 flex flex-wrap items-end gap-3">
+        <div>
+          <label className="block text-xs font-semibold text-slate-300 mb-1">Check date</label>
+          <input
+            type="date"
+            value={slotDate}
+            onChange={(event) => {
+              setSlotDate(event.target.value);
+              setSlotChecked(false);
+            }}
+            className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-slate-300 mb-1">Start time</label>
+          <input
+            type="time"
+            value={slotStartTime}
+            onChange={(event) => {
+              setSlotStartTime(event.target.value);
+              setSlotChecked(false);
+            }}
+            className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-slate-300 mb-1">End time</label>
+          <input
+            type="time"
+            value={slotEndTime}
+            onChange={(event) => {
+              setSlotEndTime(event.target.value);
+              setSlotChecked(false);
+            }}
+            className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={checkSelectedSlot}
+          disabled={checkingSlot || resources.length === 0}
+          className="px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 text-xs font-bold disabled:opacity-50"
+        >
+          {checkingSlot ? 'Checking...' : 'Check slot availability'}
+        </button>
+        {availabilityError && <p className="basis-full text-xs text-rose-400">{availabilityError}</p>}
+      </div>
+
+      {allResourcesUnavailable && (
+        <div className="glass-panel p-5 rounded-2xl border border-amber-500/30 text-xs text-amber-200 flex flex-wrap items-center justify-between gap-3">
+          <span>No resources available for this slot.</span>
+          <Link
+            to={`/booking/smart?${new URLSearchParams({ date: slotDate, startTime: slotStartTime, endTime: slotEndTime })}`}
+            className="px-3 py-2 rounded-xl bg-slate-900 border border-amber-500/30 text-amber-200 font-semibold"
+          >
+            Join a waitlist or pick another time
+          </Link>
+        </div>
+      )}
 
       {/* Filter Bar */}
       <div className="glass-panel p-4 rounded-2xl border border-slate-800 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
@@ -205,13 +314,39 @@ export default function ResourceCatalogPage() {
                   Capacity: <strong className="text-slate-200">{res.capacity} seats</strong>
                 </div>
 
-                <Link
-                  to={`/resources/${res.id}`}
-                  className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 text-xs font-bold transition-colors flex items-center gap-1"
-                >
-                  Details & Schedule
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </Link>
+                <div className="flex items-center gap-2">
+                  {slotChecked && slotAvailability[res.id] === false ? (
+                    <span className="px-3 py-1.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-[10px] font-bold">
+                      Unavailable for selected slot
+                    </span>
+                  ) : slotChecked && slotAvailability[res.id] === true ? (
+                    <Link
+                      to={`/booking/smart?${new URLSearchParams({
+                        resourceId: res.id,
+                        date: slotDate,
+                        startTime: slotStartTime,
+                        endTime: slotEndTime
+                      })}`}
+                      className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 text-xs font-bold transition-colors flex items-center gap-1"
+                    >
+                      Book this slot
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </Link>
+                  ) : (
+                    <Link
+                      to={`/resources/${res.id}`}
+                      className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 text-xs font-bold transition-colors flex items-center gap-1"
+                    >
+                      Details & Schedule
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </Link>
+                  )}
+                  {slotChecked && (
+                    <Link to={`/resources/${res.id}`} className="text-[10px] text-slate-500 hover:text-slate-300">
+                      Details
+                    </Link>
+                  )}
+                </div>
               </div>
 
             </div>

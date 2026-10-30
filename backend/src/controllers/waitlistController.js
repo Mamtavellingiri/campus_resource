@@ -14,6 +14,28 @@ const joinWaitlist = async (req, res) => {
       return res.status(400).json({ success: false, message: 'resourceId, date, startTime, endTime, and purpose are required.' });
     }
 
+    const resource = await prisma.resource.findUnique({
+      where: { id: resourceId },
+      select: { status: true, maintenanceStatus: true }
+    });
+    if (!resource) {
+      return res.status(404).json({ success: false, message: 'Resource not found.' });
+    }
+
+    const activeMaintenance = await prisma.maintenance.count({
+      where: { resourceId, status: { in: ['REPORTED', 'IN_PROGRESS'] } }
+    });
+    if (
+      ['MAINTENANCE', 'OUT_OF_SERVICE'].includes(resource.status) ||
+      (resource.maintenanceStatus && resource.maintenanceStatus !== 'NONE') ||
+      activeMaintenance > 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Resource is under maintenance and cannot be added to the waitlist.'
+      });
+    }
+
     // Verify the slot is actually taken
     const conflict = await prisma.booking.findFirst({
       where: {

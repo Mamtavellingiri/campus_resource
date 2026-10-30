@@ -39,6 +39,13 @@ const processCheckIn = async (req, res) => {
       return res.status(403).json({ success: false, message: 'You are not authorized to check in this booking.' });
     }
 
+    if (!booking.qrCodeData) {
+      return res.status(400).json({
+        success: false,
+        message: 'QR pass is not available. The booking must be approved before check-in.'
+      });
+    }
+
     // Only approved bookings can be checked in (PENDING / REJECTED / CANCELLED / NO_SHOW / already used are blocked)
     if (booking.status !== 'APPROVED') {
       return res.status(400).json({

@@ -126,24 +126,27 @@ export default function LoginPage() {
               <div className="grid grid-cols-[64px_minmax(0,1fr)] gap-3">
                 <span className="font-semibold text-emerald-400">Admin</span>
                 <div className="space-y-1 text-slate-300">
-                  <div className="break-all">admin@campus.com</div>
+                  <div className="break-all">Mamta · admin@campus.com</div>
                   <div className="text-slate-500">Password: Admin@123</div>
                 </div>
               </div>
               <div className="grid grid-cols-[64px_minmax(0,1fr)] gap-3">
-                <span className="font-semibold text-sky-400">Teacher</span>
+                <span className="font-semibold text-sky-400">Faculty</span>
                 <div className="space-y-1 text-slate-300">
-                  <div className="break-all">david.mwangi@example.com</div>
-                  <div className="text-slate-500">Password: Teacher@123</div>
+                  <div className="break-all">Vineesha · vineesha@campus.com</div>
+                  <div className="text-slate-500">Password: Faculty@123</div>
                 </div>
               </div>
               <div className="grid grid-cols-[64px_minmax(0,1fr)] gap-3">
                 <span className="font-semibold text-amber-400">Student</span>
                 <div className="space-y-1 text-slate-300">
-                  <div className="break-all">john.makori@example.com</div>
+                  <div className="break-all">Monisha · monisha@campus.com</div>
                   <div className="text-slate-500">Password: Student@123</div>
                 </div>
               </div>
+              <p className="text-[10px] text-slate-500">
+                Also available: Akash (akash@campus.com), Vikash (vikash@campus.com), Jushya (jushya@campus.com), and Harishmitha (harishmitha@campus.com) with their role passwords.
+              </p>
             </div>
           </div>
         </div>

@@ -14,15 +14,16 @@
 
 ## 🚀 Pre-Seeded Demo Credentials
 
-The database is pre-populated with realistic campus seed data (20+ users, 15+ resources across 5 buildings, bookings, notifications, feedback, and audit logs).
+The database is pre-populated with campus seed data (one admin, three faculty, three students, 15+ resources across 5 buildings, bookings, notifications, feedback, and audit logs).
 
 | Role | Demo Email | Password | Access Capabilities |
 | :--- | :--- | :--- | :--- |
-| **👑 ADMIN** | `admin@campus.com` | `Admin@123` | Full system control, resource CRUD, approvals/rejections, maintenance locking, energy & utilization analytics, audit logs |
-| **🎓 FACULTY** | `faculty@campus.com` | `Faculty@123` | Submit class/event bookings, track own reservations, view approved schedules |
-| **🎒 STUDENT** | `student@campus.com` | `Student@123` | Search & filter catalog, submit bookings, view digital QR passes, reschedule/cancel bookings, leave feedback |
+| **👑 ADMIN** | Mamta — `admin@campus.com` | `Admin@123` | Full system control, resource CRUD, approvals/rejections, maintenance locking, energy & utilization analytics, audit logs |
+| **🎓 FACULTY** | Vineesha — `vineesha@campus.com`<br>Akash — `akash@campus.com`<br>Vikash — `vikash@campus.com` | `Faculty@123` | Submit class/event bookings, track own reservations, view approved schedules and Active QR Passes |
+| **🎒 STUDENT** | Monisha — `monisha@campus.com`<br>Jushya — `jushya@campus.com`<br>Harishmitha — `harishmitha@campus.com` | `Student@123` | Search & filter catalog, view mapped faculty schedules, leave feedback |
 
-> Sign in manually with the credentials above. Imported dataset teachers use `Teacher@123`; imported dataset students use `Student@123`.
+> Faculty and student booking requests remain pending until admin approval. QR passes are created only after approval.
+> Student schedules are restricted to their mapped faculty: Vineesha → Monisha, Akash → Jushya, and Vikash → Harishmitha. Mamta can manage these assignments from Admin User Management.
 
 ---
 
@@ -209,8 +210,8 @@ node verify_e2e.js
 ====================================================
 1. Health Check: healthy
 2. Testing Authentication:
-✓ Admin Login Success: Dr. Sarah Connor (System Admin) (ADMIN)
-✓ Student Login Success: Alex Johnson (STUDENT)
+✓ Admin Login Success: Mamta (ADMIN)
+✓ Student Login Success: Monisha (STUDENT)
 ✓ Registration with Role Success: Dr. Verification (Role: FACULTY)
 3. Testing Resource Filters:
 ✓ Total resources: 15 | minCapacity >= 50: 7 resources | AVAILABLE: 14 resources

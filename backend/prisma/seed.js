@@ -15,6 +15,10 @@ async function main() {
   await prisma.maintenance.deleteMany();
   await prisma.notification.deleteMany();
   await prisma.auditLog.deleteMany();
+  await prisma.waitlistEntry.deleteMany();
+  await prisma.facultyStudentMap.deleteMany();
+  await prisma.studentCourseEnrollment.deleteMany();
+  await prisma.teacherSubjectYear.deleteMany();
   await prisma.resource.deleteMany();
   await prisma.resourceType.deleteMany();
   await prisma.building.deleteMany();
@@ -37,34 +41,15 @@ async function main() {
   const hashedFacultyPassword = await bcrypt.hash('Faculty@123', 10);
   const hashedStudentPassword = await bcrypt.hash('Student@123', 10);
 
-  // Users creation (20 Users)
+  // Create the demo administrator, faculty, and student accounts.
   const usersData = [
-    { name: 'MAMTA', email: 'admin@campus.com', password: hashedAdminPassword, role: 'ADMIN', department: 'IT Administration', phone: '+1 555-0100' },
-    { name: 'Prof. Robert Langdon', email: 'faculty@campus.com', password: hashedFacultyPassword, role: 'FACULTY', department: 'Computer Science', phone: '+1 555-0101' },
-    { name: 'Alex Johnson', email: 'student@campus.com', password: hashedStudentPassword, role: 'STUDENT', department: 'Computer Science', phone: '+1 555-0102' },
-
-    // Additional Faculty
-    { name: 'Dr. Elizabeth Shaw', email: 'elizabeth.shaw@campus.com', password: hashedFacultyPassword, role: 'FACULTY', department: 'Biotechnology', phone: '+1 555-0103' },
-    { name: 'Prof. Charles Xavier', email: 'charles.xavier@campus.com', password: hashedFacultyPassword, role: 'FACULTY', department: 'Physics & Engineering', phone: '+1 555-0104' },
-    { name: 'Dr. Henry Walton', email: 'henry.walton@campus.com', password: hashedFacultyPassword, role: 'FACULTY', department: 'Humanities & Design', phone: '+1 555-0105' },
-    { name: 'Prof. Alan Turing', email: 'alan.turing@campus.com', password: hashedFacultyPassword, role: 'FACULTY', department: 'Mathematics & Data Science', phone: '+1 555-0106' },
-    { name: 'Dr. Rosalind Franklin', email: 'rosalind.franklin@campus.com', password: hashedFacultyPassword, role: 'FACULTY', department: 'Chemistry & Bio-Engineering', phone: '+1 555-0107' },
-
-    // Additional Students
-    { name: 'Maya Patel', email: 'maya.patel@campus.com', password: hashedStudentPassword, role: 'STUDENT', department: 'Computer Science', phone: '+1 555-0108' },
-    { name: 'Liam Davies', email: 'liam.davies@campus.com', password: hashedStudentPassword, role: 'STUDENT', department: 'Electrical Engineering', phone: '+1 555-0109' },
-    { name: 'Sophia Chen', email: 'sophia.chen@campus.com', password: hashedStudentPassword, role: 'STUDENT', department: 'Business Administration', phone: '+1 555-0110' },
-    { name: 'Marcus Aurelius', email: 'marcus.a@campus.com', password: hashedStudentPassword, role: 'STUDENT', department: 'Philosophy & Design', phone: '+1 555-0111' },
-    { name: 'Emma Watson', email: 'emma.watson@campus.com', password: hashedStudentPassword, role: 'STUDENT', department: 'Biotechnology', phone: '+1 555-0112' },
-    { name: 'David Miller', email: 'david.miller@campus.com', password: hashedStudentPassword, role: 'STUDENT', department: 'Mechanical Engineering', phone: '+1 555-0113' },
-    { name: 'Chloe Grace', email: 'chloe.grace@campus.com', password: hashedStudentPassword, role: 'STUDENT', department: 'Data Science', phone: '+1 555-0114' },
-    { name: 'Noah Smith', email: 'noah.smith@campus.com', password: hashedStudentPassword, role: 'STUDENT', department: 'Civil Engineering', phone: '+1 555-0115' },
-    { name: 'Olivia Taylor', email: 'olivia.taylor@campus.com', password: hashedStudentPassword, role: 'STUDENT', department: 'Architecture & Fine Arts', phone: '+1 555-0116' },
-    { name: 'Ethan Hunt', email: 'ethan.hunt@campus.com', password: hashedStudentPassword, role: 'STUDENT', department: 'Cyber Security', phone: '+1 555-0117' },
-
-    // Additional Admins
-    { name: 'Marcus Brody (Facility Ops)', email: 'facilities@campus.com', password: hashedAdminPassword, role: 'ADMIN', department: 'Campus Operations', phone: '+1 555-0118' },
-    { name: 'Elena Rostova (Green Energy Lead)', email: 'green.admin@campus.com', password: hashedAdminPassword, role: 'ADMIN', department: 'Sustainability Office', phone: '+1 555-0119' }
+    { name: 'Mamta', email: 'admin@campus.com', password: hashedAdminPassword, role: 'ADMIN', department: 'IT Administration', phone: '+1 555-0100' },
+    { name: 'Vineesha', email: 'vineesha@campus.com', password: hashedFacultyPassword, role: 'FACULTY', department: 'Computer Science', phone: '+1 555-0101' },
+    { name: 'Monisha', email: 'monisha@campus.com', password: hashedStudentPassword, role: 'STUDENT', department: 'Computer Science', year: '1st Year', phone: '+1 555-0102' },
+    { name: 'Akash', email: 'akash@campus.com', password: hashedFacultyPassword, role: 'FACULTY', department: 'Computer Science', phone: '+1 555-0103' },
+    { name: 'Vikash', email: 'vikash@campus.com', password: hashedFacultyPassword, role: 'FACULTY', department: 'Computer Science', phone: '+1 555-0104' },
+    { name: 'Jushya', email: 'jushya@campus.com', password: hashedStudentPassword, role: 'STUDENT', department: 'Computer Science', year: '2nd Year', phone: '+1 555-0105' },
+    { name: 'Harishmitha', email: 'harishmitha@campus.com', password: hashedStudentPassword, role: 'STUDENT', department: 'Computer Science', year: '3rd Year', phone: '+1 555-0106' }
   ];
 
   const users = [];
@@ -75,8 +60,20 @@ async function main() {
   console.log(`✅ Seeded ${users.length} Users`);
 
   const adminUser = users.find(u => u.email === 'admin@campus.com');
-  const facultyUser = users.find(u => u.email === 'faculty@campus.com');
-  const studentUser = users.find(u => u.email === 'student@campus.com');
+  const facultyUser = users.find(u => u.email === 'vineesha@campus.com');
+  const studentUser = users.find(u => u.email === 'monisha@campus.com');
+  const akashUser = users.find(u => u.email === 'akash@campus.com');
+  const vikashUser = users.find(u => u.email === 'vikash@campus.com');
+  const jushyaUser = users.find(u => u.email === 'jushya@campus.com');
+  const harishmithaUser = users.find(u => u.email === 'harishmitha@campus.com');
+
+  await prisma.facultyStudentMap.createMany({
+    data: [
+      { facultyId: facultyUser.id, studentId: studentUser.id },
+      { facultyId: akashUser.id, studentId: jushyaUser.id },
+      { facultyId: vikashUser.id, studentId: harishmithaUser.id }
+    ]
+  });
 
   // Seed faculty teaching assignments so the default campus demo accounts can
   // legitimately book academic resources using the year + subject validation.
@@ -109,18 +106,18 @@ async function main() {
   }
 
   const defaultAssignments = [
-    { email: 'faculty@campus.com', subject: 'Data Structures', years: ['1st Year', '2nd Year', '3rd Year', '4th Year'] },
-    { email: 'faculty@campus.com', subject: 'Database Systems', years: ['1st Year', '2nd Year', '3rd Year', '4th Year'] },
-    { email: 'elizabeth.shaw@campus.com', subject: 'Biology', years: ['1st Year', '2nd Year', '3rd Year', '4th Year'] },
-    { email: 'charles.xavier@campus.com', subject: 'Physics', years: ['1st Year', '2nd Year', '3rd Year', '4th Year'] },
-    { email: 'henry.walton@campus.com', subject: 'Humanities', years: ['1st Year', '2nd Year', '3rd Year', '4th Year'] },
-    { email: 'alan.turing@campus.com', subject: 'Mathematics', years: ['1st Year', '2nd Year', '3rd Year', '4th Year'] },
-    { email: 'rosalind.franklin@campus.com', subject: 'Chemistry', years: ['1st Year', '2nd Year', '3rd Year', '4th Year'] },
-    { email: 'faculty@campus.com', subject: 'Artificial Intelligence', years: ['4th Year'] },
-    { email: 'faculty@campus.com', subject: 'Cloud Computing', years: ['4th Year'] },
-    { email: 'faculty@campus.com', subject: 'Cyber Security', years: ['4th Year'] },
-    { email: 'faculty@campus.com', subject: 'Machine Learning', years: ['4th Year'] },
-    { email: 'faculty@campus.com', subject: 'Major Project', years: ['4th Year'] }
+    { email: 'vineesha@campus.com', subject: 'Data Structures', years: ['1st Year', '2nd Year', '3rd Year', '4th Year'] },
+    { email: 'vineesha@campus.com', subject: 'Database Systems', years: ['1st Year', '2nd Year', '3rd Year', '4th Year'] },
+    { email: 'akash@campus.com', subject: 'Biology', years: ['1st Year', '2nd Year', '3rd Year', '4th Year'] },
+    { email: 'akash@campus.com', subject: 'Physics', years: ['1st Year', '2nd Year', '3rd Year', '4th Year'] },
+    { email: 'vikash@campus.com', subject: 'Humanities', years: ['1st Year', '2nd Year', '3rd Year', '4th Year'] },
+    { email: 'vikash@campus.com', subject: 'Mathematics', years: ['1st Year', '2nd Year', '3rd Year', '4th Year'] },
+    { email: 'akash@campus.com', subject: 'Chemistry', years: ['1st Year', '2nd Year', '3rd Year', '4th Year'] },
+    { email: 'vineesha@campus.com', subject: 'Artificial Intelligence', years: ['4th Year'] },
+    { email: 'akash@campus.com', subject: 'Cloud Computing', years: ['4th Year'] },
+    { email: 'vikash@campus.com', subject: 'Cyber Security', years: ['4th Year'] },
+    { email: 'vikash@campus.com', subject: 'Machine Learning', years: ['4th Year'] },
+    { email: 'vikash@campus.com', subject: 'Major Project', years: ['4th Year'] }
   ];
 
   for (const assignment of defaultAssignments) {
@@ -142,6 +139,35 @@ async function main() {
           subjectId: subjectMap[assignment.subject],
           year
         }
+      });
+    }
+  }
+
+  const demoStudents = [
+    { user: studentUser, year: '1st Year', facultyEmail: 'vineesha@campus.com' },
+    { user: jushyaUser, year: '2nd Year', facultyEmail: 'akash@campus.com' },
+    { user: harishmithaUser, year: '3rd Year', facultyEmail: 'vikash@campus.com' }
+  ];
+  for (const { user: student, year, facultyEmail } of demoStudents) {
+    const enrolledSubjectIds = [...new Set(
+      defaultAssignments
+        .filter((assignment) => assignment.email === facultyEmail && assignment.years.includes(year))
+        .map((assignment) => subjectMap[assignment.subject])
+    )];
+
+    for (const subjectId of enrolledSubjectIds) {
+      const department = student.department || 'Computer Science';
+      await prisma.studentCourseEnrollment.upsert({
+        where: {
+          studentId_subjectId_department_year: {
+            studentId: student.id,
+            subjectId,
+            department,
+            year
+          }
+        },
+        update: {},
+        create: { studentId: student.id, subjectId, department, year }
       });
     }
   }
@@ -528,7 +554,15 @@ async function main() {
       startTime: '10:00',
       endTime: '12:00',
       status: 'CHECKED_IN',
-      qrCodeData: JSON.stringify({ bookingCode: 'BK-2026-001', userId: studentUser.id, resourceId: smartClassroom204.id, expiresAt: todayStr + 'T12:00:00' }),
+      qrCodeData: JSON.stringify({
+        bookingCode: 'BK-2026-001',
+        userId: studentUser.id,
+        resourceId: smartClassroom204.id,
+        date: todayStr,
+        startTime: '10:00',
+        endTime: '12:00',
+        issuedAt: new Date().toISOString()
+      }),
       checkedInAt: new Date(),
       estimatedEnergyKwh: 3.6,
       ecoScoreCalculated: 94
@@ -547,27 +581,36 @@ async function main() {
       startTime: '14:00',
       endTime: '16:00',
       status: 'APPROVED',
-      qrCodeData: JSON.stringify({ bookingCode: 'BK-2026-002', userId: studentUser.id, resourceId: compLab301.id, expiresAt: todayStr + 'T16:00:00' }),
+      qrCodeData: JSON.stringify({
+        bookingCode: 'BK-2026-002',
+        userId: studentUser.id,
+        resourceId: compLab301.id,
+        date: todayStr,
+        startTime: '14:00',
+        endTime: '16:00',
+        issuedAt: new Date().toISOString()
+      }),
       estimatedEnergyKwh: 6.4,
       ecoScoreCalculated: 89
     },
 
-    // 3. Faculty Approved Class booking for tomorrow
+    // 3. Faculty Pending Class booking for tomorrow
     {
       bookingCode: 'BK-2026-003',
       userId: facultyUser.id,
       resourceId: ecoHall110.id,
       purpose: 'CS202 Data Structures & Algorithms Core Lecture',
       eventType: 'ACADEMIC',
+      subjectId: subjectMap['Data Structures'],
+      year: '1st Year',
       attendeeCount: 75,
       requestedFacilities: JSON.stringify(['Interactive Projector', 'Solar Power Backup', 'Smart Air Purifier']),
       date: tomorrowStr,
       startTime: '09:00',
       endTime: '11:00',
-      status: 'APPROVED',
+      status: 'PENDING',
       isRecurring: true,
       recurringPattern: 'WEEKLY',
-      qrCodeData: JSON.stringify({ bookingCode: 'BK-2026-003', userId: facultyUser.id, resourceId: ecoHall110.id, expiresAt: tomorrowStr + 'T11:00:00' }),
       estimatedEnergyKwh: 2.0,
       ecoScoreCalculated: 98
     },
@@ -575,7 +618,7 @@ async function main() {
     // 4. Pending Booking from Student
     {
       bookingCode: 'BK-2026-004',
-      userId: users[8].id, // Maya Patel
+      userId: jushyaUser.id,
       resourceId: confRoom402.id,
       purpose: 'ACM Student Chapter Executive Strategy Meeting',
       eventType: 'MEETING',
@@ -611,7 +654,7 @@ async function main() {
     // 6. No-Show Auto Released Booking (Past)
     {
       bookingCode: 'BK-2026-006',
-      userId: users[10].id, // Sophia Chen
+      userId: harishmithaUser.id,
       resourceId: smartClassroom204.id,
       purpose: 'Business Plan Peer Review',
       eventType: 'WORKSHOP',
@@ -629,7 +672,7 @@ async function main() {
     // 7. Cancelled Booking
     {
       bookingCode: 'BK-2026-007',
-      userId: users[9].id, // Liam Davies
+      userId: jushyaUser.id,
       resourceId: compLab301.id,
       purpose: 'IEEE Circuit Simulation Study Session',
       eventType: 'PERSONAL',
@@ -647,10 +690,12 @@ async function main() {
     // 8. Future Pending Booking
     {
       bookingCode: 'BK-2026-008',
-      userId: users[3].id, // Dr. Elizabeth Shaw
+      userId: akashUser.id,
       resourceId: resources[3].id, // Bio Seminar Hall
       purpose: 'Biotech Synthetic Biology Guest Seminar',
       eventType: 'EVENT',
+      subjectId: subjectMap['Biology'],
+      year: '1st Year',
       attendeeCount: 110,
       requestedFacilities: JSON.stringify(['Projector', 'Air Conditioning', 'Sound System', 'Podium Mic']),
       date: nextWeekStr,
@@ -664,19 +709,85 @@ async function main() {
     // 9. Approved Booking Next Week
     {
       bookingCode: 'BK-2026-009',
-      userId: users[4].id, // Prof. Charles Xavier
+      userId: vikashUser.id,
       resourceId: auditorium.id,
-      purpose: 'Quantum Physics Mid-Term Guest Assembly',
+      purpose: 'Mathematics Mid-Term Guest Assembly',
       eventType: 'EXAM',
+      subjectId: subjectMap['Mathematics'],
+      year: '3rd Year',
       attendeeCount: 280,
       requestedFacilities: JSON.stringify(['4K Projection System', 'Central AC', 'Dolby Atmos Sound']),
       date: nextWeekStr,
       startTime: '14:00',
       endTime: '17:00',
       status: 'APPROVED',
-      qrCodeData: JSON.stringify({ bookingCode: 'BK-2026-009', userId: users[4].id, resourceId: auditorium.id, expiresAt: nextWeekStr + 'T17:00:00' }),
+      qrCodeData: JSON.stringify({
+        bookingCode: 'BK-2026-009',
+        userId: vikashUser.id,
+        resourceId: auditorium.id,
+        date: nextWeekStr,
+        startTime: '14:00',
+        endTime: '17:00',
+        issuedAt: new Date().toISOString()
+      }),
       estimatedEnergyKwh: 37.5,
       ecoScoreCalculated: 80
+    },
+
+    // 11. Approved class booking for Vineesha / Monisha
+    {
+      bookingCode: 'BK-2026-011',
+      userId: facultyUser.id,
+      resourceId: smartClassroom204.id,
+      purpose: 'Data Structures Lecture',
+      eventType: 'ACADEMIC',
+      subjectId: subjectMap['Data Structures'],
+      year: '1st Year',
+      attendeeCount: 45,
+      requestedFacilities: JSON.stringify(['Projector', 'Smartboard']),
+      date: tomorrowStr,
+      startTime: '13:00',
+      endTime: '14:00',
+      status: 'APPROVED',
+      qrCodeData: JSON.stringify({
+        bookingCode: 'BK-2026-011',
+        userId: facultyUser.id,
+        resourceId: smartClassroom204.id,
+        date: tomorrowStr,
+        startTime: '13:00',
+        endTime: '14:00',
+        issuedAt: new Date().toISOString()
+      }),
+      estimatedEnergyKwh: 2.0,
+      ecoScoreCalculated: 94
+    },
+
+    // 12. Approved class booking for Akash / Jushya
+    {
+      bookingCode: 'BK-2026-012',
+      userId: akashUser.id,
+      resourceId: confRoom402.id,
+      purpose: 'Biology Seminar',
+      eventType: 'ACADEMIC',
+      subjectId: subjectMap['Biology'],
+      year: '2nd Year',
+      attendeeCount: 12,
+      requestedFacilities: JSON.stringify(['Projector']),
+      date: tomorrowStr,
+      startTime: '12:00',
+      endTime: '13:00',
+      status: 'APPROVED',
+      qrCodeData: JSON.stringify({
+        bookingCode: 'BK-2026-012',
+        userId: akashUser.id,
+        resourceId: confRoom402.id,
+        date: tomorrowStr,
+        startTime: '12:00',
+        endTime: '13:00',
+        issuedAt: new Date().toISOString()
+      }),
+      estimatedEnergyKwh: 1.0,
+      ecoScoreCalculated: 92
     },
 
     // 10. Checked Out Past Booking
@@ -714,6 +825,24 @@ async function main() {
           remarks: 'Approved automatically by system rule & admin clearance'
         }
       });
+    }
+
+    if (created.status === 'APPROVED' && [facultyUser.id, akashUser.id, vikashUser.id].includes(created.userId)) {
+      const owner = users.find((user) => user.id === created.userId);
+      const mapping = await prisma.facultyStudentMap.findFirst({
+        where: { facultyId: created.userId },
+        select: { studentId: true }
+      });
+      if (mapping) {
+        await prisma.notification.create({
+          data: {
+            userId: mapping.studentId,
+            title: 'New class scheduled',
+            message: `${owner.name} has a class in ${resources.find((resource) => resource.id === created.resourceId).name} on ${created.date} ${created.startTime}-${created.endTime}.`,
+            type: 'BOOKING_APPROVED'
+          }
+        });
+      }
     }
   }
   console.log(`✅ Seeded ${bookings.length} Bookings with approval logs`);
@@ -816,9 +945,9 @@ async function main() {
     },
     {
       userId: facultyUser.id,
-      title: 'Class Booking Confirmed',
-      message: `Recurring lecture slot for CS202 in ${ecoHall110.name} confirmed for ${tomorrowStr} at 09:00 AM.`,
-      type: 'BOOKING_APPROVED',
+      title: 'Class Booking Request Submitted',
+      message: `Recurring lecture request for CS202 in ${ecoHall110.name} on ${tomorrowStr} is awaiting admin approval.`,
+      type: 'BOOKING_CREATED',
       isRead: false
     },
     {
@@ -829,7 +958,7 @@ async function main() {
       isRead: false
     },
     {
-      userId: users[10].id, // Sophia Chen
+      userId: harishmithaUser.id,
       title: 'Resource Auto-Released (No Show)',
       message: 'Your booking BK-2026-006 was auto-released after 15 minutes of inactivity without QR check-in.',
       type: 'NO_SHOW',
@@ -888,9 +1017,13 @@ async function main() {
   console.log('\n🎉 DATABASE SEEDING COMPLETED SUCCESSFULLY!');
   console.log('--------------------------------------------------');
   console.log('DEMO ACCOUNTS READY:');
-  console.log('1. Admin:   admin@campus.com   / Admin@123');
-  console.log('2. Faculty: faculty@campus.com / Faculty@123');
-  console.log('3. Student: student@campus.com / Student@123');
+  console.log('1. Admin:   admin@campus.com   / Admin@123 (Mamta)');
+  console.log('2. Faculty: vineesha@campus.com / Faculty@123 (Vineesha)');
+  console.log('3. Faculty: akash@campus.com   / Faculty@123 (Akash)');
+  console.log('4. Faculty: vikash@campus.com  / Faculty@123 (Vikash)');
+  console.log('5. Student: monisha@campus.com / Student@123 (Monisha)');
+  console.log('6. Student: jushya@campus.com  / Student@123 (Jushya)');
+  console.log('7. Student: harishmitha@campus.com / Student@123 (Harishmitha)');
   console.log('--------------------------------------------------\n');
 }
 
