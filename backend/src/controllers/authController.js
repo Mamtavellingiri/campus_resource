@@ -7,7 +7,7 @@ const JWT_SECRET = config.JWT_SECRET;
 
 const register = async (req, res) => {
   try {
-    const { name, email, password, department, phone, role, year, section } = req.body;
+    const { name, email, password, department, phone, year, section } = req.body;
 
     if (!name || !email || !password) {
       return res.status(400).json({ success: false, message: 'Name, email, and password are required.' });
@@ -16,10 +16,6 @@ const register = async (req, res) => {
     if (password.length < 6) {
       return res.status(400).json({ success: false, message: 'Password must be at least 6 characters long.' });
     }
-
-    const assignedRole = role && ['STUDENT', 'FACULTY', 'ADMIN'].includes(role.toUpperCase())
-      ? role.toUpperCase()
-      : 'STUDENT';
 
     const existingUser = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
     if (existingUser) {
@@ -33,11 +29,11 @@ const register = async (req, res) => {
         name: name.trim(),
         email: email.toLowerCase().trim(),
         password: hashedPassword,
-        role: assignedRole,
+        role: 'STUDENT',
         department: department || 'General',
         phone: phone || null,
-        year: assignedRole === 'STUDENT' ? year || null : null,
-        section: assignedRole === 'STUDENT' ? section || null : null
+        year: year || null,
+        section: section || null
       },
       select: {
         id: true, name: true, email: true, role: true, department: true,

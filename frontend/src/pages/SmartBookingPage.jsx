@@ -264,13 +264,17 @@ export default function SmartBookingPage() {
         setBookingSuccess(bookRes.data.booking);
       }
     } catch (err) {
-      if (err.response && err.response.status === 409) {
+      const errorMessage = err.response?.data?.message || 'Failed to confirm booking.';
+      if (
+        err.response?.status === 409 &&
+        (err.response.data?.conflict || /already booked/i.test(errorMessage))
+      ) {
         setConflictInfo({
           ...(err.response.data.conflict || { startTime, endTime, purpose: 'Double Booking Conflict' }),
-          message: err.response.data.message
+          message: errorMessage
         });
       } else {
-        setErrorMsg(err.response?.data?.message || 'Failed to confirm booking.');
+        setErrorMsg(errorMessage);
       }
     } finally {
       setLoading(false);

@@ -5,7 +5,8 @@ import FeedbackModal from '../components/FeedbackModal';
 import RescheduleModal from '../components/RescheduleModal';
 import EcoBadge from '../components/EcoBadge';
 import { useAuth } from '../context/AuthContext';
-import { QrCode, Clock, MapPin, XCircle, CheckCircle2, MessageSquare, AlertCircle, RefreshCw } from 'lucide-react';
+import { downloadBookingCalendar } from '../services/downloads';
+import { QrCode, Clock, MapPin, MessageSquare, RefreshCw, CalendarPlus } from 'lucide-react';
 
 export default function BookingHistoryPage() {
   const { user } = useAuth();
@@ -134,6 +135,16 @@ export default function BookingHistoryPage() {
                   >
                     <QrCode className="w-4 h-4" />
                     View QR & Check-In
+                  </button>
+                )}
+
+                {b.status === 'APPROVED' && (
+                  <button
+                    onClick={() => downloadBookingCalendar(b).catch(() => window.alert('Failed to download the calendar file.'))}
+                    className="px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-200 hover:bg-slate-800 text-xs font-semibold flex items-center gap-1"
+                  >
+                    <CalendarPlus className="w-3.5 h-3.5" />
+                    Add to Calendar
                   </button>
                 )}
 

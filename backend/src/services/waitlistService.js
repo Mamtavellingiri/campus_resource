@@ -1,5 +1,6 @@
 const prisma = require('../config/prisma');
 const { getNowInTz, toMinutes } = require('../utils/time');
+const { MAX_ACTIVE_BOOKINGS, getActiveBookingFilter, getBookingPolicyMessage } = require('../utils/bookingRules');
 const { calculateBookingEnergyAndEcoScore } = require('./ecoService');
 const crypto = require('crypto');
 
@@ -25,6 +26,8 @@ async function promoteNext(resourceId, date, startTime, endTime) {
     });
 
     for (const entry of candidates) {
+      if (await getBookingPolicyMessage(entry)) continue;
+
       if (
         ['MAINTENANCE', 'OUT_OF_SERVICE'].includes(entry.resource.status) ||
         (entry.resource.maintenanceStatus && entry.resource.maintenanceStatus !== 'NONE')
@@ -66,7 +69,13 @@ async function promoteNext(resourceId, date, startTime, endTime) {
       const durationHours = Math.max(0.5, (eH2 * 60 + eM2 - (sH2 * 60 + sM2)) / 60);
       const eco = calculateBookingEnergyAndEcoScore(entry.resource, entry.attendeeCount, durationHours);
 
+      let promoted = false;
       await prisma.$transaction(async (tx) => {
+        const activeBookingCount = await tx.booking.count({
+          where: getActiveBookingFilter(entry.userId)
+        });
+        if (activeBookingCount >= MAX_ACTIVE_BOOKINGS) return;
+
         // Generate unique booking code
         let bookingCode;
         for (let i = 0; i < 5; i++) {
@@ -115,8 +124,10 @@ async function promoteNext(resourceId, date, startTime, endTime) {
             type: 'BOOKING_CREATED'
           }
         });
-      });
+        promoted = true;
+      }, { isolationLevel: 'Serializable' });
 
+      if (!promoted) continue;
       // Only promote one entry per freed slot
       break;
     }

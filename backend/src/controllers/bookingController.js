@@ -2,6 +2,15 @@ const prisma = require('../config/prisma');
 const { calculateBookingEnergyAndEcoScore } = require('../services/ecoService');
 const { getSmartRecommendations } = require('../services/recommendationService');
 const { promoteNext } = require('../services/waitlistService');
+const {
+  MAX_ACTIVE_BOOKINGS,
+  MAX_BOOKING_DURATION_MINUTES,
+  getActiveBookingFilter,
+  getBookingPolicyMessage
+} = require('../utils/bookingRules');
+const { getNowInTz } = require('../utils/time');
+const { z } = require('zod');
+const crypto = require('crypto');
 
 const notifyMappedStudent = async (facultyId, title, message, type = 'BOOKING_APPROVED') => {
   const mappings = await prisma.facultyStudentMap.findMany({
@@ -25,6 +34,16 @@ const checkAvailability = async (req, res) => {
 
     if (!resourceId || !date || !startTime || !endTime) {
       return res.status(400).json({ success: false, message: 'resourceId, date, startTime, and endTime are required.' });
+    }
+
+    const policyMessage = await getBookingPolicyMessage({ date, startTime, endTime });
+    if (policyMessage) return res.status(400).json({ success: false, message: policyMessage });
+
+    if (await prisma.booking.count({ where: getActiveBookingFilter(req.user.id) }) >= MAX_ACTIVE_BOOKINGS) {
+      return res.status(409).json({
+        success: false,
+        message: 'You already have the maximum 5 future active bookings. Cancel an upcoming booking before requesting another.'
+      });
     }
 
     const resource = await prisma.resource.findUnique({
@@ -120,6 +139,16 @@ const recommendResources = async (req, res) => {
       });
     }
 
+    const policyMessage = await getBookingPolicyMessage({ date, startTime, endTime });
+    if (policyMessage) return res.status(400).json({ success: false, message: policyMessage });
+
+    if (await prisma.booking.count({ where: getActiveBookingFilter(req.user.id) }) >= MAX_ACTIVE_BOOKINGS) {
+      return res.status(409).json({
+        success: false,
+        message: 'You already have the maximum 5 future active bookings. Cancel an upcoming booking before requesting another.'
+      });
+    }
+
     const recommendations = await getSmartRecommendations({
       resourceType,
       eventType,
@@ -177,9 +206,6 @@ const getMyTeachingAssignments = async (req, res) => {
 /**
  * Create a new Booking with conflict check
  */
-const { z } = require('zod');
-const crypto = require('crypto');
-
 const bookingSchema = z.object({
   resourceId: z.string().min(1, 'resourceId is required'),
   purpose: z.string().min(5, 'Purpose must be at least 5 characters').max(200),
@@ -198,6 +224,13 @@ const bookingSchema = z.object({
   year: z.string().optional()
 }).refine(data => data.startTime < data.endTime, {
   message: "End time must be after start time",
+  path: ["endTime"]
+}).refine(data => {
+  const [startHour, startMinute] = data.startTime.split(':').map(Number);
+  const [endHour, endMinute] = data.endTime.split(':').map(Number);
+  return (endHour * 60 + endMinute) - (startHour * 60 + startMinute) <= MAX_BOOKING_DURATION_MINUTES;
+}, {
+  message: "Maximum booking duration is 4 hours.",
   path: ["endTime"]
 }).refine(data => {
   const { getNowInTz } = require('../utils/time');
@@ -341,11 +374,20 @@ const createBooking = async (req, res) => {
        }
     }
 
+    for (const bookingDate of datesToBook) {
+      const policyMessage = await getBookingPolicyMessage({ date: bookingDate, startTime, endTime });
+      if (policyMessage) return res.status(400).json({ success: false, message: policyMessage });
+    }
+
     const recurringGroupId = isRecurring && datesToBook.length > 1 ? crypto.randomUUID() : null;
     const createdBookings = [];
     const skippedDates = [];
 
     await prisma.$transaction(async (tx) => {
+      let activeBookingCount = await tx.booking.count({
+        where: getActiveBookingFilter(userId)
+      });
+
       for (const d of datesToBook) {
         const existingConflict = await tx.booking.findFirst({
           where: {
@@ -379,6 +421,10 @@ const createBooking = async (req, res) => {
           throw new Error('Resource is currently under maintenance and cannot be booked.');
         }
 
+        if (activeBookingCount >= MAX_ACTIVE_BOOKINGS) {
+          throw new Error('ACTIVE_BOOKING_LIMIT');
+        }
+
         const bookingCode = await generateUniqueBookingCode(tx);
         
         const qrData = initialStatus === 'APPROVED' ? JSON.stringify({
@@ -408,6 +454,7 @@ const createBooking = async (req, res) => {
           });
         }
         createdBookings.push(newBooking);
+        activeBookingCount += 1;
       }
       
       if (createdBookings.length === 0) {
@@ -417,7 +464,7 @@ const createBooking = async (req, res) => {
       await tx.auditLog.create({
         data: { userId, action: 'CREATE_BOOKING', entity: 'BOOKING', entityId: createdBookings[0].id, details: `Created ${createdBookings.length} bookings for ${resource.name}` }
       });
-    });
+    }, { isolationLevel: 'Serializable' });
 
     for (const b of createdBookings) {
       await prisma.notification.create({
@@ -440,6 +487,18 @@ const createBooking = async (req, res) => {
       skippedDates
     });
   } catch (error) {
+    if (error.message === 'ACTIVE_BOOKING_LIMIT') {
+      return res.status(409).json({
+        success: false,
+        message: 'You already have the maximum 5 future active bookings. Cancel an upcoming booking before requesting another.'
+      });
+    }
+    if (error.code === 'P2034') {
+      return res.status(409).json({
+        success: false,
+        message: 'Booking availability or your active booking limit changed while processing. Refresh and try again.'
+      });
+    }
     if (error.message.includes('already booked') || error.message.includes('All requested dates have conflicts')) {
       return res.status(409).json({
         success: false,
@@ -599,6 +658,80 @@ const getBookingById = async (req, res) => {
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: 'Failed to fetch booking details.', error: error.message });
+  }
+};
+
+const escapeIcsText = (value) => String(value || '')
+  .replace(/\\/g, '\\\\')
+  .replace(/\r\n|\n|\r/g, '\\n')
+  .replace(/,/g, '\\,')
+  .replace(/;/g, '\\;');
+
+const foldIcsLine = (line) => {
+  let current = '';
+  let folded = '';
+  for (const character of line) {
+    if (Buffer.byteLength(current, 'utf8') + Buffer.byteLength(character, 'utf8') > 75) {
+      folded += `${current}\r\n `;
+      current = ' ';
+    }
+    current += character;
+  }
+  return folded + current;
+};
+
+const downloadBookingCalendar = async (req, res) => {
+  try {
+    const booking = await prisma.booking.findUnique({
+      where: { id: req.params.id },
+      include: { resource: true, user: { select: { name: true } } }
+    });
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Booking not found.' });
+    }
+    if (booking.userId !== req.user.id && req.user.role !== 'ADMIN') {
+      return res.status(403).json({ success: false, message: 'You are not authorized to download this booking calendar.' });
+    }
+    if (booking.status !== 'APPROVED') {
+      return res.status(400).json({ success: false, message: 'Only APPROVED bookings can be added to a calendar.' });
+    }
+
+    const datePart = booking.date.replace(/-/g, '');
+    const timePart = (time) => `${time.replace(':', '')}00`;
+    const lines = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Campus Resource Booking//EN',
+      'CALSCALE:GREGORIAN',
+      'BEGIN:VTIMEZONE',
+      'TZID:Asia/Kolkata',
+      'X-LIC-LOCATION:Asia/Kolkata',
+      'BEGIN:STANDARD',
+      'TZOFFSETFROM:+0530',
+      'TZOFFSETTO:+0530',
+      'TZNAME:IST',
+      'DTSTART:19700101T000000',
+      'END:STANDARD',
+      'END:VTIMEZONE',
+      'BEGIN:VEVENT',
+      `UID:${booking.id}@campus-resource`,
+      `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')}`,
+      `DTSTART;TZID=Asia/Kolkata:${datePart}T${timePart(booking.startTime)}`,
+      `DTEND;TZID=Asia/Kolkata:${datePart}T${timePart(booking.endTime)}`,
+      `SUMMARY:${escapeIcsText(`${booking.resource.name} booking`)}`,
+      `DESCRIPTION:${escapeIcsText(`Booking code: ${booking.bookingCode}. Booked by ${booking.user.name}.`)}`,
+      'END:VEVENT',
+      'END:VCALENDAR'
+    ];
+
+    res.set({
+      'Content-Type': 'text/calendar; charset=utf-8',
+      'Content-Disposition': `attachment; filename="${booking.bookingCode}.ics"`
+    });
+    return res.send(`${lines.map(foldIcsLine).join('\r\n')}\r\n`);
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to generate booking calendar.', error: error.message });
   }
 };
 
@@ -917,6 +1050,15 @@ const rescheduleBooking = async (req, res) => {
       });
     }
 
+    const now = getNowInTz();
+    const nowTime = `${String(Math.floor(now.minutes / 60)).padStart(2, '0')}:${String(now.minutes % 60).padStart(2, '0')}`;
+    if (date === now.date && startTime <= nowTime) {
+      return res.status(400).json({ success: false, message: 'Cannot reschedule to a time slot that has already passed.' });
+    }
+
+    const policyMessage = await getBookingPolicyMessage({ date, startTime, endTime });
+    if (policyMessage) return res.status(400).json({ success: false, message: policyMessage });
+
     // Find existing booking
     const booking = await prisma.booking.findUnique({
       where: { id },
@@ -1022,22 +1164,31 @@ const rescheduleBooking = async (req, res) => {
       issuedAt: new Date().toISOString()
     }) : null;
 
-    const updatedBooking = await prisma.booking.update({
-      where: { id },
-      data: {
-        date,
-        startTime,
-        endTime,
-        status: newStatus,
-        qrCodeData: qrData,
-        estimatedEnergyKwh: eco.estimatedEnergyKwh,
-        ecoScoreCalculated: eco.ecoScoreCalculated
-      },
-      include: {
-        resource: { include: { building: true, type: true } },
-        user: { select: { id: true, name: true, email: true, role: true } }
+    const updatedBooking = await prisma.$transaction(async (tx) => {
+      const activeBookingCount = await tx.booking.count({
+        where: getActiveBookingFilter(booking.userId, booking.id)
+      });
+      if (activeBookingCount >= MAX_ACTIVE_BOOKINGS) {
+        throw new Error('ACTIVE_BOOKING_LIMIT');
       }
-    });
+
+      return tx.booking.update({
+        where: { id },
+        data: {
+          date,
+          startTime,
+          endTime,
+          status: newStatus,
+          qrCodeData: qrData,
+          estimatedEnergyKwh: eco.estimatedEnergyKwh,
+          ecoScoreCalculated: eco.ecoScoreCalculated
+        },
+        include: {
+          resource: { include: { building: true, type: true } },
+          user: { select: { id: true, name: true, email: true, role: true } }
+        }
+      });
+    }, { isolationLevel: 'Serializable' });
 
     // Create Notification
     await prisma.notification.create({
@@ -1078,6 +1229,18 @@ const rescheduleBooking = async (req, res) => {
       }
     });
   } catch (error) {
+    if (error.message === 'ACTIVE_BOOKING_LIMIT') {
+      return res.status(409).json({
+        success: false,
+        message: 'You already have the maximum 5 future active bookings. Cancel an upcoming booking before rescheduling.'
+      });
+    }
+    if (error.code === 'P2034') {
+      return res.status(409).json({
+        success: false,
+        message: 'Booking availability or your active booking limit changed while processing. Refresh and try again.'
+      });
+    }
     return res.status(500).json({
       success: false,
       message: 'Failed to reschedule booking.',
@@ -1094,6 +1257,7 @@ module.exports = {
   getBookings,
   getBusySlots,
   getBookingById,
+  downloadBookingCalendar,
   cancelBooking,
   rescheduleBooking,
   approveBooking,

@@ -9,4 +9,14 @@ async function getGraceMinutes() {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 15;
 }
 
-module.exports = { getGraceMinutes };
+async function getBlackoutDates() {
+  const setting = await prisma.systemSetting.findUnique({
+    where: { key: 'blackout_dates' }
+  });
+  return (setting?.value || '')
+    .split(',')
+    .map((date) => date.trim())
+    .filter(Boolean);
+}
+
+module.exports = { getGraceMinutes, getBlackoutDates };

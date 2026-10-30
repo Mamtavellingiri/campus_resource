@@ -8,7 +8,6 @@ export default function RegisterPage() {
     name: '',
     email: '',
     password: '',
-    role: 'STUDENT',
     department: 'Computer Science',
     phone: ''
   });
@@ -99,17 +98,9 @@ export default function RegisterPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">Account Role</label>
-                <div className="relative">
+                <div className="relative w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-200">
                   <Shield className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <select
-                    value={formData.role}
-                    onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
-                  >
-                    <option value="STUDENT">Student</option>
-                    <option value="FACULTY">Faculty</option>
-                    <option value="ADMIN">Administrator</option>
-                  </select>
+                  Student
                 </div>
               </div>
 

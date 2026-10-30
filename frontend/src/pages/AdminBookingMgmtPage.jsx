@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import QRModal from '../components/QRModal';
 import EcoBadge from '../components/EcoBadge';
-import { CheckSquare, QrCode, X } from 'lucide-react';
+import { downloadBookingsCsv } from '../services/downloads';
+import { CheckSquare, Download, QrCode, X } from 'lucide-react';
 
 export default function AdminBookingMgmtPage() {
   const [bookings, setBookings] = useState([]);
@@ -13,6 +14,7 @@ export default function AdminBookingMgmtPage() {
   const [selectedRejectBooking, setSelectedRejectBooking] = useState(null);
   const [rejectionReason, setRejectionReason] = useState('');
   const [isRejecting, setIsRejecting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   const fetchAllBookings = async () => {
     setLoading(true);
@@ -67,6 +69,18 @@ export default function AdminBookingMgmtPage() {
     setSelectedRejectBooking(booking);
   };
 
+  const handleExport = async () => {
+    setActionError(null);
+    setIsExporting(true);
+    try {
+      await downloadBookingsCsv();
+    } catch (error) {
+      setActionError(error.response?.data?.message || 'Failed to download bookings CSV.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const filtered = filterStatus
     ? bookings.filter(b => b.status === filterStatus)
     : bookings;
@@ -85,17 +99,28 @@ export default function AdminBookingMgmtPage() {
           </p>
         </div>
 
-        <select
-          value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
-          className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200"
-        >
-          <option value="">All Statuses ({bookings.length})</option>
-          <option value="PENDING">PENDING Only</option>
-          <option value="APPROVED">APPROVED</option>
-          <option value="CHECKED_IN">CHECKED_IN</option>
-          <option value="NO_SHOW">NO_SHOW</option>
-        </select>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200"
+          >
+            <option value="">All Statuses ({bookings.length})</option>
+            <option value="PENDING">PENDING Only</option>
+            <option value="APPROVED">APPROVED</option>
+            <option value="CHECKED_IN">CHECKED_IN</option>
+            <option value="NO_SHOW">NO_SHOW</option>
+          </select>
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={isExporting}
+            className="px-3 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center gap-1.5 disabled:opacity-50"
+          >
+            <Download className="w-4 h-4" />
+            {isExporting ? 'Downloading...' : 'Download CSV'}
+          </button>
+        </div>
       </div>
 
       {actionError && (

@@ -8,7 +8,8 @@
 
 - **Frontend**: React 18, Vite, Tailwind CSS, React Router v6, Axios, Lucide React Icons, Recharts, FullCalendar v6, `qrcode.react`.
 - **Backend**: Node.js, Express.js REST API, JWT Authentication, bcryptjs password hashing, CORS, `node-cron`, Zod validation.
-- **Database**: Prisma ORM with SQLite (`dev.db`), zero external setup required, fully compatible with MySQL.
+- **Database**: PostgreSQL via Prisma ORM.
+- **Deployment**: Render (backend/API) and Vercel (frontend).
 
 ---
 
@@ -31,15 +32,16 @@ The database is pre-populated with campus seed data (one admin, three faculty, t
 
 | # | Feature | Implementation Details |
 | :--- | :--- | :--- |
-| **1** | **Authentication** | Register, login, logout, and role-based access control (`ADMIN`, `FACULTY`, `STUDENT`) using JWT tokens stored securely and validated on protected routes. |
+| **1** | **Authentication** | Public registration always creates a `STUDENT`; admins manage higher roles through protected admin routes. Login and role-based access use JWTs on protected routes. |
 | **2** | **Resource Management (Admin)** | Complete CRUD for classrooms, computer labs, seminar halls, auditoriums, projectors, and sports facilities with name, type, capacity, building/floor/room location, operating hours, and status (`AVAILABLE` / `MAINTENANCE`). |
-| **3** | **Booking & Conflict Guard** | Users select resource, date, start time, end time. Double-booking prevention via strict overlap rule: `existing_start < new_end AND existing_end > new_start`. Validates that `endTime > startTime` and `date` is not in the past. Clear error messages on every failure. |
+| **3** | **Booking & Conflict Guard** | Users select resource, date, start time, end time. Double-booking prevention via strict overlap rule: `existing_start < new_end AND existing_end > new_start`. Validates a maximum 4-hour duration, at most 5 future pending/approved bookings per user, blackout dates, and that `date` is not in the past. |
 | **4** | **Approval Workflow** | Faculty bookings start as `PENDING`. Administrators review, approve, or reject requests; only approved class bookings appear in the matching students' schedule. |
 | **5** | **My Bookings** | Users can view all their bookings, cancel upcoming sessions, and **reschedule** dates/times with live conflict checking and status updates. |
 | **6** | **Search & Filters** | Filter campus resources simultaneously by **Type** (Classroom, Lab, Hall, etc.), **Capacity** (15+, 30+, 50+, 100+, 200+), **Location** (Building), and **Availability** (`AVAILABLE`, `MAINTENANCE`). |
 | **7** | **Calendar View per Resource** | Master visual calendar powered by FullCalendar with a **Per-Resource Filter Dropdown** allowing users to inspect the schedule of individual rooms. |
 | **8** | **Admin Dashboard** | Executive metrics showing **Total Resources**, **Pending Requests**, **Utilization Bar Chart** (booking distribution across resources), and **Most-Used Resources** ranking table. |
 | **9** | **Notifications** | In-app notification bell with unread counter alerting users when bookings are created, approved, rejected, rescheduled, or cancelled. |
+| **10** | **Calendar & CSV Export** | Owners and admins can download approved bookings as Asia/Kolkata `.ics` files. Admins can export all bookings to CSV, with optional date filters. |
 
 ---
 
@@ -49,9 +51,8 @@ The database is pre-populated with campus seed data (one admin, three faculty, t
 campus_resource-main/
 ├── backend/
 │   ├── prisma/
-│   │   ├── schema.prisma          # Database schema (10 models with foreign keys)
-│   │   ├── seed.js                # Database seed script (realistic campus entities)
-│   │   └── dev.db                 # SQLite database file
+│   │   ├── schema.prisma          # PostgreSQL database schema
+│   │   └── seed.js                # Legacy destructive seed (do not run)
 │   ├── src/
 │   │   ├── config/
 │   │   │   ├── env.js             # Environment variables configuration
@@ -59,7 +60,7 @@ campus_resource-main/
 │   │   ├── controllers/
 │   │   │   ├── adminController.js         # User role updates, settings, audit logs
 │   │   │   ├── analyticsController.js     # System overview, utilization, energy metrics
-│   │   │   ├── authController.js          # Registration with role, login, profile
+│   │   │   ├── authController.js          # Student registration, login, profile
 │   │   │   ├── bookingController.js       # Bookings CRUD, reschedule, overlap rule, approve/reject
 │   │   │   ├── checkInController.js       # QR code pass scan & check-in simulation
 │   │   │   ├── feedbackController.js      # Post-usage ratings & cleanliness reviews
@@ -84,11 +85,13 @@ campus_resource-main/
 │   │   │   ├── occupancyService.js        # Real-time room occupancy evaluation
 │   │   │   └── recommendationService.js   # AI multi-criteria resource recommendation
 │   │   ├── utils/
+│   │   │   ├── bookingRules.js            # Shared booking limits and blackout-date rules
 │   │   │   └── time.js                    # Timezone & slot calculation utilities
 │   │   └── server.js                      # Express application entry point
-│   ├── .env
+│   ├── .env.example
 │   ├── package.json
 │   ├── check_data.js
+│   ├── seed-campus-data.js        # Safe, additive, idempotent seed
 │   └── verify_e2e.js                      # End-to-end automated API verification test
 ├── frontend/
 │   ├── src/
@@ -126,7 +129,8 @@ campus_resource-main/
 │   │   │   ├── SmartBookingPage.jsx       # AI smart booking & conflict checking
 │   │   │   └── StudentDashboard.jsx       # Student quick-actions dashboard
 │   │   ├── services/
-│   │   │   └── api.js                     # Configured Axios client with JWT interceptor
+│   │   │   ├── api.js                     # Configured Axios client with JWT interceptor
+│   │   │   └── downloads.js               # Authenticated calendar and CSV downloads
 │   │   ├── App.jsx                        # React Router configuration & route guards
 │   │   ├── index.css                      # Tailwind CSS design system
 │   │   └── main.jsx                       # React DOM entry point
@@ -161,6 +165,28 @@ Defined in [`schema.prisma`](file:///c:/Users/mamta/OneDrive/Desktop/campus_reso
 ### Prerequisites
 - Node.js (v18+ recommended)
 - npm (v9+)
+- A PostgreSQL database
+
+### Environment variables
+
+Create `backend/.env` with:
+
+```env
+PORT=5000
+DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/DATABASE?schema=public"
+JWT_SECRET="replace-with-a-long-random-secret"
+CORS_ORIGIN="http://localhost:3000"
+TIMEZONE="Asia/Kolkata"
+NODE_ENV="development"
+```
+
+Set `frontend/.env` to the backend API URL:
+
+```env
+VITE_API_BASE_URL="http://localhost:5000/api"
+```
+
+Never commit real secrets or `.env` files.
 
 ### Step 1: Start Backend Server
 ```bash
@@ -169,11 +195,12 @@ cd backend
 # Install dependencies
 npm install
 
-# Push database schema and sync SQLite dev.db
+# For a new PostgreSQL database only: create/sync the schema.
+# Back up any database containing important data before schema changes.
 npx prisma db push
 
-# (Optional) Seed realistic demo records if creating a new database
-node prisma/seed.js
+# Safe, additive seed; requires the seven demo accounts to already exist.
+npm run db:seed
 
 # Start backend server on port 5000
 npm start
@@ -187,10 +214,60 @@ cd frontend
 # Install dependencies
 npm install
 
-# Launch Vite development server on port 3000
+# Launch Vite development server
 npm run dev
 ```
-*Web Application URL:* `http://localhost:3000`
+Vite prints the local web application URL when it starts.
+
+### Safe campus-data seed
+
+`backend/seed-campus-data.js` is additive, idempotent, and does not delete or
+overwrite users or existing settings. It adds missing campus data and the
+`blackout_dates` setting (initially empty). Run it from `backend/` with a
+configured `DATABASE_URL`:
+
+```bash
+npm run db:seed
+# or: node seed-campus-data.js
+```
+
+It expects the seven demo accounts listed above to exist already. Do not run
+`prisma/seed.js` against a database containing data; that legacy script is
+destructive. Never use `prisma migrate reset` on a database with data.
+
+### Render + Vercel deployment
+
+1. Create a Render PostgreSQL database and a Render Web Service using `backend/`
+   as its root directory. Use `npm install` for the build command and `npm start`
+   for the start command.
+2. Set these backend environment variables in Render:
+   - `DATABASE_URL`: Render PostgreSQL connection string.
+   - `JWT_SECRET`: long, private random secret.
+   - `CORS_ORIGIN`: exact deployed Vercel frontend origin (for example,
+     `https://your-campus-app.vercel.app`).
+   - `TIMEZONE`: `Asia/Kolkata`.
+   - `NODE_ENV`: `production`.
+   - `PORT`: Render supplies this automatically; set only if required.
+3. Deploy the `frontend/` directory to Vercel. Set
+   `VITE_API_BASE_URL` to the deployed Render API URL ending in `/api`, for
+   example `https://your-campus-api.onrender.com/api`, then redeploy.
+4. Apply schema changes only after backing up the PostgreSQL database. Do not
+   run the legacy seed script or `prisma migrate reset` on production data.
+
+### Booking limits and blackout dates
+
+Administrators can create/update the `blackout_dates` system setting through
+`PUT /api/admin/settings`, for example
+`{"key":"blackout_dates","value":"2026-12-25,2027-01-01"}`. Dates must be
+comma-separated `YYYY-MM-DD` values. Booking and rescheduling requests on those
+dates are rejected with a message shown in the booking UI.
+
+Approved bookings can be downloaded as `.ics` at
+`GET /api/bookings/:id/ics` by the owner or an admin. Admins can download
+`GET /api/admin/export/bookings.csv`; optional inclusive `from` and `to`
+`YYYY-MM-DD` query parameters filter the exported dates. The CSV includes the
+booking code, user and email, resource, date, start/end times, status, estimated
+kWh, and eco score.
 
 ---
 

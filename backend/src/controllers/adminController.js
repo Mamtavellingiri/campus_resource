@@ -1,6 +1,70 @@
 const bcrypt = require('bcryptjs');
 const prisma = require('../config/prisma');
 
+const csvCell = (value) => {
+  const text = String(value ?? '');
+  const safeText = /^[\t\r\n ]*[=+\-@]/.test(text) ? `'${text}` : text;
+  return `"${safeText.replace(/"/g, '""')}"`;
+};
+
+const isValidDate = (date) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+  const parsedDate = new Date(`${date}T00:00:00Z`);
+  return !Number.isNaN(parsedDate.getTime()) && parsedDate.toISOString().slice(0, 10) === date;
+};
+
+const exportBookingsCsv = async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    if ((from && !isValidDate(from)) || (to && !isValidDate(to))) {
+      return res.status(400).json({ success: false, message: 'Date filters must use YYYY-MM-DD format.' });
+    }
+    if (from && to && from > to) {
+      return res.status(400).json({ success: false, message: 'The from date must be on or before the to date.' });
+    }
+
+    const where = {};
+    if (from || to) {
+      where.date = {};
+      if (from) where.date.gte = from;
+      if (to) where.date.lte = to;
+    }
+    const bookings = await prisma.booking.findMany({
+      where,
+      include: {
+        user: { select: { name: true, email: true } },
+        resource: { select: { name: true } }
+      },
+      orderBy: [{ date: 'asc' }, { startTime: 'asc' }]
+    });
+
+    const rows = [
+      ['Booking Code', 'User', 'User Email', 'Resource', 'Date', 'Start', 'End', 'Status', 'Estimated kWh', 'Eco Score'],
+      ...bookings.map((booking) => [
+        booking.bookingCode,
+        booking.user.name,
+        booking.user.email,
+        booking.resource.name,
+        booking.date,
+        booking.startTime,
+        booking.endTime,
+        booking.status,
+        booking.estimatedEnergyKwh,
+        booking.ecoScoreCalculated
+      ])
+    ];
+    const csv = rows.map((row) => row.map(csvCell).join(',')).join('\r\n');
+
+    res.set({
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': 'attachment; filename="bookings.csv"'
+    });
+    return res.send(`\uFEFF${csv}\r\n`);
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to export bookings.', error: error.message });
+  }
+};
+
 const getAllUsers = async (req, res) => {
   try {
     const users = await prisma.user.findMany({
@@ -419,6 +483,16 @@ const updateSystemSetting = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Setting key and value are required.' });
     }
 
+    if (key === 'blackout_dates' && String(value).split(',').some((date) => {
+      const trimmedDate = date.trim();
+      return trimmedDate !== '' && !isValidDate(trimmedDate);
+    })) {
+      return res.status(400).json({
+        success: false,
+        message: 'Blackout dates must be comma-separated dates in YYYY-MM-DD format.'
+      });
+    }
+
     const setting = await prisma.systemSetting.upsert({
       where: { key },
       update: { value: String(value) },
@@ -441,6 +515,7 @@ const updateSystemSetting = async (req, res) => {
 };
 
 module.exports = {
+  exportBookingsCsv,
   getAllUsers,
   createUser,
   getAllSubjects,

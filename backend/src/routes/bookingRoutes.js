@@ -7,6 +7,7 @@ const {
   getBookings,
   getBusySlots,
   getBookingById,
+  downloadBookingCalendar,
   cancelBooking,
   rescheduleBooking,
   approveBooking,
@@ -27,6 +28,7 @@ router.get('/busy-slots', getBusySlots);
 
 router.get('/', getBookings);
 router.post('/', createBooking);
+router.get('/:id/ics', downloadBookingCalendar);
 router.get('/:id', getBookingById);
 router.patch('/:id/cancel', cancelBooking);
 router.patch('/:id/reschedule', rescheduleBooking);

@@ -1,6 +1,7 @@
 const express = require('express');
 const {
   getAllUsers,
+  exportBookingsCsv,
   createUser,
   getAllSubjects,
   updateUserRole,
@@ -21,6 +22,7 @@ router.use(authenticate);
 router.use(authorize(['ADMIN']));
 
 router.get('/users', getAllUsers);
+router.get('/export/bookings.csv', exportBookingsCsv);
 router.post('/users', createUser);
 router.get('/subjects', getAllSubjects);
 router.get('/students/:id/enrollments', getStudentEnrollments);

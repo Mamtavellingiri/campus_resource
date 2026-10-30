@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Clock, MapPin, QrCode } from 'lucide-react';
+import { CalendarPlus, Clock, MapPin, QrCode } from 'lucide-react';
 import api from '../services/api';
 import QRModal from '../components/QRModal';
 import { useAuth } from '../context/AuthContext';
+import { downloadBookingCalendar } from '../services/downloads';
 
 const getToday = () => {
   const today = new Date();
@@ -91,14 +92,26 @@ export default function ActiveQRPage() {
               </p>
               <p className="font-mono text-xs text-emerald-400">{booking.bookingCode}</p>
 
-              <button
-                type="button"
-                onClick={() => setSelectedBooking(booking)}
-                className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-bold text-xs flex items-center gap-2"
-              >
-                <QrCode className="w-4 h-4" />
-                Show QR
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedBooking(booking)}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-bold text-xs flex items-center gap-2"
+                >
+                  <QrCode className="w-4 h-4" />
+                  Show QR
+                </button>
+                {booking.status === 'APPROVED' && (
+                  <button
+                    type="button"
+                    onClick={() => downloadBookingCalendar(booking).catch(() => window.alert('Failed to download the calendar file.'))}
+                    className="px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1"
+                  >
+                    <CalendarPlus className="w-4 h-4" />
+                    Add to Calendar
+                  </button>
+                )}
+              </div>
             </article>
           ))}
         </div>

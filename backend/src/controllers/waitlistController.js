@@ -1,6 +1,6 @@
 const prisma = require('../config/prisma');
 const { promoteNext } = require('../services/waitlistService');
-const { getNowInTz } = require('../utils/time');
+const { getBookingPolicyMessage } = require('../utils/bookingRules');
 
 /**
  * POST /api/waitlist
@@ -13,6 +13,9 @@ const joinWaitlist = async (req, res) => {
     if (!resourceId || !date || !startTime || !endTime || !purpose) {
       return res.status(400).json({ success: false, message: 'resourceId, date, startTime, endTime, and purpose are required.' });
     }
+
+    const policyMessage = await getBookingPolicyMessage({ date, startTime, endTime });
+    if (policyMessage) return res.status(400).json({ success: false, message: policyMessage });
 
     const resource = await prisma.resource.findUnique({
       where: { id: resourceId },
