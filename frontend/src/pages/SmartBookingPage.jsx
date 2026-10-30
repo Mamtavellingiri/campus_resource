@@ -55,6 +55,7 @@ export default function SmartBookingPage() {
   const [yearBookings, setYearBookings] = useState([]);
   const [waitlistResourceId, setWaitlistResourceId] = useState('');
   const [waitlistMessage, setWaitlistMessage] = useState('');
+  const [busyWarning, setBusyWarning] = useState('');
 
   const facilityOptions = [
     'Projector',
@@ -127,6 +128,32 @@ export default function SmartBookingPage() {
     buildingId,
     requestedFacilities
   ]);
+
+  // Early warning when the chosen room already has a booking in the chosen slot
+  useEffect(() => {
+    if (isStudent || !selectedResourceId || !date) {
+      setBusyWarning('');
+      return;
+    }
+    const checkBusy = async () => {
+      try {
+        const res = await api.get('/bookings/busy-slots', {
+          params: { resourceId: selectedResourceId, date }
+        });
+        const clash = (res.data.slots || []).find(
+          (slot) => startTime < slot.endTime && endTime > slot.startTime
+        );
+        setBusyWarning(
+          clash
+            ? `This room is busy from ${clash.startTime} to ${clash.endTime} on ${date}. Pick another time or room.`
+            : ''
+        );
+      } catch (err) {
+        setBusyWarning('');
+      }
+    };
+    checkBusy();
+  }, [isStudent, selectedResourceId, date, startTime, endTime]);
 
   const selectedAssignment = assignments.find((assignment) => assignment.id === selectedAssignmentId);
 
@@ -489,6 +516,12 @@ export default function SmartBookingPage() {
                 })}
               </div>
             </div>
+
+            {busyWarning && (
+              <div className="mt-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold">
+                {busyWarning}
+              </div>
+            )}
 
             <button
               onClick={handleGetRecommendations}

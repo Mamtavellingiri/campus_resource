@@ -10,6 +10,7 @@ export default function ResourceDetailPage() {
   const { user } = useAuth();
   const [resource, setResource] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [busySlots, setBusySlots] = useState([]);
 
   useEffect(() => {
     const fetchDetails = async () => {
@@ -19,6 +20,14 @@ export default function ResourceDetailPage() {
         if (res.data.success) {
           setResource(res.data.resource);
         }
+
+        // Faculty also see anonymous "Busy" slots booked by other faculty
+        if (user?.role === 'FACULTY') {
+          const busyRes = await api.get('/bookings/busy-slots', { params: { resourceId: id } });
+          setBusySlots((busyRes.data.slots || []).filter((slot) => !slot.isMine));
+        } else {
+          setBusySlots([]);
+        }
       } catch (err) {
         console.error(err);
       } finally {
@@ -26,10 +35,32 @@ export default function ResourceDetailPage() {
       }
     };
     fetchDetails();
-  }, [id]);
+  }, [id, user?.role]);
 
   if (loading) return <div className="p-12 text-center text-xs text-slate-400">Loading resource details...</div>;
   if (!resource) return <div className="p-12 text-center text-xs text-rose-400">Resource not found.</div>;
+
+  const todayStr = new Intl.DateTimeFormat('en-CA').format(new Date());
+  const scheduleRows = [
+    ...(resource.bookings || []).map((b) => ({
+      key: `own-${b.id}`,
+      date: b.date,
+      startTime: b.startTime,
+      endTime: b.endTime,
+      busy: false,
+      label: b.subject?.name || b.purpose || 'Booked'
+    })),
+    ...busySlots.map((slot, index) => ({
+      key: `busy-${index}-${slot.date}-${slot.startTime}`,
+      date: slot.date,
+      startTime: slot.startTime,
+      endTime: slot.endTime,
+      busy: true,
+      label: 'Busy'
+    }))
+  ]
+    .filter((row) => row.date >= todayStr)
+    .sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime));
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
@@ -122,6 +153,36 @@ export default function ResourceDetailPage() {
                 </span>
               ))}
             </div>
+          </div>
+
+          {/* Upcoming schedule */}
+          <div>
+            <h3 className="font-bold text-sm text-slate-100 mb-2 flex items-center gap-2">
+              <Clock className="w-4 h-4 text-emerald-400" />
+              Upcoming Schedule
+            </h3>
+            {scheduleRows.length === 0 ? (
+              <p className="text-xs text-slate-400">No upcoming bookings. This room is free.</p>
+            ) : (
+              <div className="space-y-2">
+                {scheduleRows.map((row) => (
+                  <div
+                    key={row.key}
+                    className={`flex items-center justify-between p-3 rounded-xl border text-xs ${
+                      row.busy
+                        ? 'bg-slate-900 border-slate-700 text-slate-400'
+                        : 'bg-emerald-500/10 border-emerald-500/30 text-slate-200'
+                    }`}
+                  >
+                    <span className="font-semibold">{row.date}</span>
+                    <span>{row.startTime} - {row.endTime}</span>
+                    <span className={row.busy ? 'text-slate-400 font-semibold' : 'text-emerald-400 font-semibold'}>
+                      {row.label}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Feedback & Reviews */}

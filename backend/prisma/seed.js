@@ -105,19 +105,24 @@ async function main() {
     subjectMap[subjectName] = subject.id;
   }
 
-  const defaultAssignments = [
-    { email: 'vineesha@campus.com', subject: 'Data Structures', years: ['1st Year', '2nd Year', '3rd Year', '4th Year'] },
-    { email: 'vineesha@campus.com', subject: 'Database Systems', years: ['1st Year', '2nd Year', '3rd Year', '4th Year'] },
-    { email: 'akash@campus.com', subject: 'Biology', years: ['1st Year', '2nd Year', '3rd Year', '4th Year'] },
-    { email: 'akash@campus.com', subject: 'Physics', years: ['1st Year', '2nd Year', '3rd Year', '4th Year'] },
-    { email: 'vikash@campus.com', subject: 'Humanities', years: ['1st Year', '2nd Year', '3rd Year', '4th Year'] },
-    { email: 'vikash@campus.com', subject: 'Mathematics', years: ['1st Year', '2nd Year', '3rd Year', '4th Year'] },
-    { email: 'akash@campus.com', subject: 'Chemistry', years: ['1st Year', '2nd Year', '3rd Year', '4th Year'] },
-    { email: 'vineesha@campus.com', subject: 'Artificial Intelligence', years: ['4th Year'] },
-    { email: 'akash@campus.com', subject: 'Cloud Computing', years: ['4th Year'] },
-    { email: 'vikash@campus.com', subject: 'Cyber Security', years: ['4th Year'] },
-    { email: 'vikash@campus.com', subject: 'Machine Learning', years: ['4th Year'] },
-    { email: 'vikash@campus.com', subject: 'Major Project', years: ['4th Year'] }
+   const defaultAssignments = [
+    // Vineesha teaches 1st Year (Monisha)
+    { email: 'vineesha@campus.com', subject: 'Engineering Mathematics I',        years: ['1st Year'] },
+    { email: 'vineesha@campus.com', subject: 'Database Management System',       years: ['1st Year'] },
+    { email: 'vineesha@campus.com', subject: 'Computational Problem Solving', years: ['1st Year'] },
+
+    // Akash teaches 2nd Year (Jushya)
+    { email: 'akash@campus.com', subject: 'Data Structures',         years: ['2nd Year'] },
+    { email: 'akash@campus.com', subject: 'Computer Networks',         years: ['2nd Year'] },
+    { email: 'akash@campus.com', subject: 'Operating Systems',       years: ['2nd Year'] },
+    { email: 'akash@campus.com', subject: 'Cloud Computing', years: ['2nd Year'] },
+
+    // Vikash teaches 3rd Year (Harishmitha)
+    { email: 'vikash@campus.com', subject: 'Humanities',       years: ['3rd Year'] },
+    { email: 'vikash@campus.com', subject: 'Artificial Intelligence',      years: ['3rd Year'] },
+    { email: 'vikash@campus.com', subject: 'Cyber Security',   years: ['3rd Year'] },
+    { email: 'vikash@campus.com', subject: 'Machine Learning', years: ['3rd Year'] },
+    { email: 'vikash@campus.com', subject: 'Major Project',    years: ['3rd Year'] }
   ];
 
   for (const assignment of defaultAssignments) {

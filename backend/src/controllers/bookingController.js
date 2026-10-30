@@ -516,6 +516,39 @@ const getBookings = async (req, res) => {
   }
 };
 
+/**
+ * Anonymous busy slots for faculty/admin calendars.
+ * Returns only time ranges - never names, purposes, codes or QR data.
+ * Students get an empty list (they only see their mapped faculty's classes).
+ */
+const getBusySlots = async (req, res) => {
+  try {
+    if (req.user.role === 'STUDENT') {
+      return res.json({ success: true, slots: [] });
+    }
+    const { resourceId, date } = req.query;
+    const where = { status: { in: ['APPROVED', 'CHECKED_IN', 'PENDING'] } };
+    if (resourceId) where.resourceId = resourceId;
+    if (date) where.date = date;
+
+    const rows = await prisma.booking.findMany({
+      where,
+      select: { resourceId: true, date: true, startTime: true, endTime: true, userId: true }
+    });
+
+    const slots = rows.map(r => ({
+      resourceId: r.resourceId,
+      date: r.date,
+      startTime: r.startTime,
+      endTime: r.endTime,
+      isMine: r.userId === req.user.id
+    }));
+    return res.json({ success: true, slots });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to load busy slots.' });
+  }
+};
+
 const getBookingById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -1059,6 +1092,7 @@ module.exports = {
   getMyTeachingAssignments,
   createBooking,
   getBookings,
+  getBusySlots,
   getBookingById,
   cancelBooking,
   rescheduleBooking,

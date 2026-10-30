@@ -82,6 +82,7 @@ const getResourceById = async (req, res) => {
   try {
     const { id } = req.params;
     const bookingWhere = { status: { in: ['APPROVED', 'CHECKED_IN'] } };
+    bookingWhere.date = { gte: getNowInTz().date };
     if (!req.user) {
       bookingWhere.userId = '__none__';
     } else if (req.user.role === 'STUDENT') {

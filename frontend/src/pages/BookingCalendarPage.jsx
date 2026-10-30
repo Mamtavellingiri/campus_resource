@@ -24,6 +24,36 @@ export default function BookingCalendarPage() {
     setLoading(true);
     try {
       const res = await api.get('/bookings?view=all');
+
+      // Faculty also get anonymous "Busy" blocks for other faculty's bookings
+      let busyEvents = [];
+      if (user?.role === 'FACULTY') {
+        try {
+          const busyRes = await api.get('/bookings/busy-slots');
+          const resourceById = Object.fromEntries(resources.map(r => [r.id, r]));
+          busyEvents = (busyRes.data.slots || [])
+            .filter(slot => !slot.isMine)
+            .filter(slot => {
+              const r = resourceById[slot.resourceId];
+              if (selectedResource && slot.resourceId !== selectedResource) return false;
+              if (selectedBuilding && r?.buildingId !== selectedBuilding) return false;
+              if (selectedCategory && r?.type?.category !== selectedCategory) return false;
+              return true;
+            })
+            .map((slot, index) => ({
+              id: `busy-${index}-${slot.resourceId}-${slot.date}-${slot.startTime}`,
+              title: `${resourceById[slot.resourceId]?.name || 'Room'} - Busy`,
+              start: `${slot.date}T${slot.startTime}:00`,
+              end: `${slot.date}T${slot.endTime}:00`,
+              backgroundColor: '#64748b',
+              borderColor: '#64748b',
+              extendedProps: { busy: true }
+            }));
+        } catch (busyErr) {
+          console.error(busyErr);
+        }
+      }
+
       if (res.data.success) {
         let bList = res.data.bookings;
         if (user?.role === 'STUDENT') {
@@ -57,7 +87,7 @@ export default function BookingCalendarPage() {
           };
         });
 
-        setEvents(formattedEvents);
+        setEvents([...formattedEvents, ...busyEvents]);
       }
     } catch (err) {
       console.error(err);
@@ -84,9 +114,10 @@ export default function BookingCalendarPage() {
     };
     fetchMeta();
     fetchCalendarEvents();
-  }, [selectedBuilding, selectedCategory, selectedResource, user?.role]);
+  }, [selectedBuilding, selectedCategory, selectedResource, user?.role, resources.length]);
 
   const handleEventClick = (info) => {
+    if (info.event.extendedProps?.busy) return; // anonymous busy block: nothing to open
     const booking = info.event.extendedProps?.booking;
     if (
       user?.role !== 'STUDENT' &&
@@ -119,6 +150,9 @@ export default function BookingCalendarPage() {
           <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-teal-400"/> Checked-In</span>
           <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-400"/> Pending</span>
           <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-rose-500"/> No-Show</span>
+          {user?.role === 'FACULTY' && (
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-slate-500"/> Busy (other faculty)</span>
+          )}
         </div>
       </div>
 

@@ -5,6 +5,7 @@ const {
   getMyTeachingAssignments,
   createBooking,
   getBookings,
+  getBusySlots,
   getBookingById,
   cancelBooking,
   rescheduleBooking,
@@ -21,6 +22,8 @@ router.post('/check-availability', checkAvailability);
 router.post('/recommend', recommendResources);
 router.get('/my-assignments', authorize(['FACULTY', 'ADMIN']), getMyTeachingAssignments);
 
+// Anonymous busy slots (must stay ABOVE '/:id')
+router.get('/busy-slots', getBusySlots);
 
 router.get('/', getBookings);
 router.post('/', createBooking);
